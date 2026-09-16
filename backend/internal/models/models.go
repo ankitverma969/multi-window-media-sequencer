@@ -142,7 +142,7 @@ type MediaSnapshot struct {
 
 // SyncEvent represents a global override where all windows play one media item simultaneously.
 type SyncEvent struct {
-	ID              bson.ObjectID `bson:"_id,omitempty" json:"id"`
+	ID              bson.ObjectID `bson:"_id,omitempty" json:"-"`
 	EventID         string        `bson:"event_id" json:"event_id"`
 	MediaKey        string        `bson:"media_key" json:"media_key"`
 	MediaSnapshot   MediaSnapshot `bson:"media_snapshot" json:"media_snapshot"`

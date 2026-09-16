@@ -280,7 +280,8 @@ All API endpoints return standardized JSON: `{ success: true, data: ..., server_
 * `GET /api/v1/windows/:id/playback`: Authoritative current item and timeline position.
 * `POST /api/v1/sync`: Trigger a synchronized media override across all windows.
 * `GET /api/v1/sync/current`: Query active sync event details.
-* `POST /api/v1/sync/:id/cancel`: Cancel an active sync override immediately.
+* `GET /api/v1/sync/:event_id`: Inspect sync event by public event ID.
+* `POST /api/v1/sync/:event_id/cancel`: Cancel an active sync override immediately.
 
 ---
 

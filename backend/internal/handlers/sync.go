@@ -87,7 +87,10 @@ func (h *SyncHandler) GetActiveSync(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SyncHandler) GetSyncEvent(w http.ResponseWriter, r *http.Request) {
-	eventID := r.PathValue("id")
+	eventID := r.PathValue("event_id")
+	if strings.TrimSpace(eventID) == "" {
+		eventID = r.PathValue("id")
+	}
 	if strings.TrimSpace(eventID) == "" {
 		utils.WriteError(w, http.StatusBadRequest, "INVALID_EVENT_ID", "event id is required")
 		return
@@ -107,7 +110,10 @@ func (h *SyncHandler) GetSyncEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *SyncHandler) CancelSync(w http.ResponseWriter, r *http.Request) {
-	eventID := r.PathValue("id")
+	eventID := r.PathValue("event_id")
+	if strings.TrimSpace(eventID) == "" {
+		eventID = r.PathValue("id")
+	}
 	if strings.TrimSpace(eventID) == "" {
 		utils.WriteError(w, http.StatusBadRequest, "INVALID_EVENT_ID", "event id is required")
 		return

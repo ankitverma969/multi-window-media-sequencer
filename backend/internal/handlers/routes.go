@@ -69,8 +69,8 @@ func NewRouter(deps Dependencies) http.Handler {
 	if deps.SyncService != nil {
 		mux.HandleFunc("POST /api/v1/sync", syncHandler.TriggerSync)
 		mux.HandleFunc("GET /api/v1/sync/current", syncHandler.GetActiveSync)
-		mux.HandleFunc("GET /api/v1/sync/{id}", syncHandler.GetSyncEvent)
-		mux.HandleFunc("POST /api/v1/sync/{id}/cancel", syncHandler.CancelSync)
+		mux.HandleFunc("GET /api/v1/sync/{event_id}", syncHandler.GetSyncEvent)
+		mux.HandleFunc("POST /api/v1/sync/{event_id}/cancel", syncHandler.CancelSync)
 	}
 
 	// Middleware chain: Recovery -> Logger -> CORS -> Mux

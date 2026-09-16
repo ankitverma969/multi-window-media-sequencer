@@ -45,8 +45,8 @@ In the event of an error, `success` is `false`, `data` is `null`, and `error` co
 | **Playback** | `GET` | `/api/v1/windows/{id}/playback` | Current deterministic 5-hour playback state | 200 |
 | **Sync** | `POST` | `/api/v1/sync` | Trigger global sync override for media item | 201 |
 | **Sync** | `GET` | `/api/v1/sync/current` | Inspect currently active synchronization | 200 |
-| **Sync** | `GET` | `/api/v1/sync/{id}` | Inspect sync event by ID | 200 |
-| **Sync** | `POST` | `/api/v1/sync/{id}/cancel` | Cancel an active or scheduled sync override | 200 |
+| **Sync** | `GET` | `/api/v1/sync/{event_id}` | Inspect sync event by event_id | 200 |
+| **Sync** | `POST` | `/api/v1/sync/{event_id}/cancel` | Cancel an active or scheduled sync override | 200 |
 
 ---
 
@@ -232,7 +232,6 @@ In the event of an error, `success` is `false`, `data` is `null`, and `error` co
 {
   "success": true,
   "data": {
-    "id": "650000000000000000000050",
     "event_id": "sync_9f2a4bc1",
     "media_key": "M2",
     "media_snapshot": {
@@ -256,7 +255,7 @@ In the event of an error, `success` is `false`, `data` is `null`, and `error` co
 * **Response (200 OK):** Returns active sync event or `null` if normal playback is running.
 
 #### Cancel Synchronization
-* **Endpoint:** `POST /api/v1/sync/{id}/cancel`
+* **Endpoint:** `POST /api/v1/sync/{event_id}/cancel`
 * **Response (200 OK):**
 ```json
 {

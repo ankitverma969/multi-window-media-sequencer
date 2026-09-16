@@ -291,7 +291,7 @@ func (m *MockSyncRepository) FindByID(ctx context.Context, eventID string) (*mod
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, ev := range m.events {
-		if ev.EventID == eventID || ev.ID.Hex() == eventID {
+		if ev.EventID == eventID {
 			copyEv := *ev
 			return &copyEv, nil
 		}

@@ -153,3 +153,39 @@ func TestModelJSONSerialization(t *testing.T) {
 		t.Errorf("decoded media does not match original: %+v vs %+v", decoded, m)
 	}
 }
+
+func TestSyncEventJSONSerialization(t *testing.T) {
+	oid := bson.NewObjectID()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	syncEv := SyncEvent{
+		ID:              oid,
+		EventID:         "sync_abcd1234",
+		MediaKey:        "M2",
+		DurationSeconds: 15,
+		StartTime:       now,
+		EndTime:         now.Add(15 * time.Second),
+		Status:          SyncStatusScheduled,
+		TriggeredBy:     "operator",
+		CreatedAt:       now,
+	}
+
+	data, err := json.Marshal(syncEv)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %v", err)
+	}
+
+	var rawMap map[string]any
+	if err := json.Unmarshal(data, &rawMap); err != nil {
+		t.Fatalf("json.Unmarshal to map failed: %v", err)
+	}
+
+	// Verify internal MongoDB _id is NOT exposed in the public JSON contract
+	if val, exists := rawMap["id"]; exists {
+		t.Errorf("expected 'id' to not be present in serialized JSON, got: %v", val)
+	}
+
+	// Verify public identifier event_id is properly serialized
+	if rawMap["event_id"] != "sync_abcd1234" {
+		t.Errorf("expected event_id to be 'sync_abcd1234', got: %v", rawMap["event_id"])
+	}
+}
