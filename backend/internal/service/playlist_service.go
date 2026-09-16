@@ -50,14 +50,34 @@ func (s *defaultPlaylistService) notifyUpdate(windowNumber int, playlist *models
 	}
 }
 
+// GetPlaylist retrieves the playlist for a window identified by its number or
+// canonical ObjectID. We resolve the window first (same as every mutating path)
+// so that playlist lookup is always keyed on window_number, not the stale
+// window_id field that may exist in older playlist documents.
 func (s *defaultPlaylistService) GetPlaylist(ctx context.Context, idOrNumber string) (*models.Playlist, error) {
-	p, err := s.playlistRepo.FindByWindowIdOrNumber(ctx, idOrNumber)
+	window, err := s.windowRepo.FindByIdOrNumber(ctx, idOrNumber)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrWindowNotFound
+		}
+		return nil, fmt.Errorf("failed to resolve window %s: %w", idOrNumber, err)
+	}
+
+	p, err := s.playlistRepo.FindByWindowNumber(ctx, window.WindowNumber)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrPlaylistNotFound
 		}
-		return nil, fmt.Errorf("failed to retrieve playlist for window %s: %w", idOrNumber, err)
+		return nil, fmt.Errorf("failed to retrieve playlist for window %d: %w", window.WindowNumber, err)
 	}
+
+	// Heal stale window_id in-memory so the response carries the canonical ID.
+	// The database document is not modified here; it will be corrected on the
+	// next write operation (AppendItem / UpdateItems / RemoveItem / Upsert).
+	if p.WindowID != window.ID {
+		p.WindowID = window.ID
+	}
+
 	return p, nil
 }
 
@@ -101,7 +121,7 @@ func (s *defaultPlaylistService) AddPlaylistItem(ctx context.Context, idOrNumber
 		DurationSeconds: duration,
 	}
 
-	updatedPlaylist, err := s.playlistRepo.AppendItem(ctx, window.WindowNumber, item)
+	updatedPlaylist, err := s.playlistRepo.AppendItem(ctx, window.WindowNumber, window.ID, item)
 	if err != nil {
 		if errors.Is(err, repository.ErrConflict) {
 			return nil, ErrConflict
@@ -109,6 +129,8 @@ func (s *defaultPlaylistService) AddPlaylistItem(ctx context.Context, idOrNumber
 		return nil, fmt.Errorf("failed to append item to window %d: %w", window.WindowNumber, err)
 	}
 
+	// Always carry the canonical window ObjectID in the response.
+	updatedPlaylist.WindowID = window.ID
 	s.notifyUpdate(window.WindowNumber, updatedPlaylist)
 	return updatedPlaylist, nil
 }
@@ -122,7 +144,7 @@ func (s *defaultPlaylistService) RemovePlaylistItem(ctx context.Context, idOrNum
 		return nil, fmt.Errorf("failed to verify window %s: %w", idOrNumber, err)
 	}
 
-	updatedPlaylist, err := s.playlistRepo.RemoveItem(ctx, window.WindowNumber, itemID)
+	updatedPlaylist, err := s.playlistRepo.RemoveItem(ctx, window.WindowNumber, window.ID, itemID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrPlaylistNotFound
@@ -130,6 +152,8 @@ func (s *defaultPlaylistService) RemovePlaylistItem(ctx context.Context, idOrNum
 		return nil, fmt.Errorf("failed to remove item %s from window %d: %w", itemID, window.WindowNumber, err)
 	}
 
+	// Always carry the canonical window ObjectID in the response.
+	updatedPlaylist.WindowID = window.ID
 	s.notifyUpdate(window.WindowNumber, updatedPlaylist)
 	return updatedPlaylist, nil
 }
@@ -156,7 +180,7 @@ func (s *defaultPlaylistService) UpdatePlaylist(ctx context.Context, idOrNumber 
 		}
 	}
 
-	updatedPlaylist, err := s.playlistRepo.UpdateItems(ctx, window.WindowNumber, items)
+	updatedPlaylist, err := s.playlistRepo.UpdateItems(ctx, window.WindowNumber, window.ID, items)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrPlaylistNotFound
@@ -164,6 +188,8 @@ func (s *defaultPlaylistService) UpdatePlaylist(ctx context.Context, idOrNumber 
 		return nil, fmt.Errorf("failed to update playlist for window %d: %w", window.WindowNumber, err)
 	}
 
+	// Always carry the canonical window ObjectID in the response.
+	updatedPlaylist.WindowID = window.ID
 	s.notifyUpdate(window.WindowNumber, updatedPlaylist)
 	return updatedPlaylist, nil
 }

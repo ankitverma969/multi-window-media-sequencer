@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/eva-bharat/media-sequencer/backend/internal/models"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 var (
@@ -41,9 +42,9 @@ type WindowRepository interface {
 type PlaylistRepository interface {
 	FindByWindowNumber(ctx context.Context, windowNumber int) (*models.Playlist, error)
 	FindByWindowIdOrNumber(ctx context.Context, idOrNumber string) (*models.Playlist, error)
-	AppendItem(ctx context.Context, windowNumber int, item models.PlaylistItem) (*models.Playlist, error)
-	UpdateItems(ctx context.Context, windowNumber int, items []models.PlaylistItem) (*models.Playlist, error)
-	RemoveItem(ctx context.Context, windowNumber int, itemID string) (*models.Playlist, error)
+	AppendItem(ctx context.Context, windowNumber int, windowID bson.ObjectID, item models.PlaylistItem) (*models.Playlist, error)
+	UpdateItems(ctx context.Context, windowNumber int, windowID bson.ObjectID, items []models.PlaylistItem) (*models.Playlist, error)
+	RemoveItem(ctx context.Context, windowNumber int, windowID bson.ObjectID, itemID string) (*models.Playlist, error)
 	Upsert(ctx context.Context, p *models.Playlist) error
 }
 

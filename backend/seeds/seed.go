@@ -155,6 +155,14 @@ func SeedInitialData(
 			return fmt.Errorf("failed to upsert seed window %d: %w", wc.number, err)
 		}
 
+		// Read back the canonical Window document so we have its actual MongoDB _id.
+		// windowRepo.Upsert uses $setOnInsert for _id, meaning the in-memory
+		// window.ID may not reflect the stored _id when the document already existed.
+		canonicalWindow, err := windowRepo.FindByNumber(ctx, wc.number)
+		if err != nil {
+			return fmt.Errorf("failed to read back window %d after upsert: %w", wc.number, err)
+		}
+
 		// Build playlist items
 		var playlistItems []models.PlaylistItem
 		for _, key := range wc.items {
@@ -173,8 +181,8 @@ func SeedInitialData(
 		}
 
 		playlist := &models.Playlist{
-			WindowID:     window.ID,
-			WindowNumber: window.WindowNumber,
+			WindowID:     canonicalWindow.ID, // Use canonical ID from the stored document
+			WindowNumber: canonicalWindow.WindowNumber,
 			Items:        playlistItems,
 			Version:      1,
 		}

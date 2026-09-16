@@ -180,7 +180,7 @@ func (m *MockPlaylistRepository) FindByWindowIdOrNumber(ctx context.Context, idO
 	return nil, ErrNotFound
 }
 
-func (m *MockPlaylistRepository) AppendItem(ctx context.Context, windowNumber int, item models.PlaylistItem) (*models.Playlist, error) {
+func (m *MockPlaylistRepository) AppendItem(ctx context.Context, windowNumber int, windowID bson.ObjectID, item models.PlaylistItem) (*models.Playlist, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p, exists := m.playlists[windowNumber]
@@ -189,13 +189,14 @@ func (m *MockPlaylistRepository) AppendItem(ctx context.Context, windowNumber in
 	}
 	item.Order = len(p.Items) + 1
 	p.Items = append(p.Items, item)
+	p.WindowID = windowID // stamp canonical window ObjectID
 	p.Recalculate()
 	copyP := *p
 	copyP.Items = append([]models.PlaylistItem(nil), p.Items...)
 	return &copyP, nil
 }
 
-func (m *MockPlaylistRepository) UpdateItems(ctx context.Context, windowNumber int, items []models.PlaylistItem) (*models.Playlist, error) {
+func (m *MockPlaylistRepository) UpdateItems(ctx context.Context, windowNumber int, windowID bson.ObjectID, items []models.PlaylistItem) (*models.Playlist, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p, exists := m.playlists[windowNumber]
@@ -203,13 +204,14 @@ func (m *MockPlaylistRepository) UpdateItems(ctx context.Context, windowNumber i
 		return nil, ErrNotFound
 	}
 	p.Items = items
+	p.WindowID = windowID // stamp canonical window ObjectID
 	p.Recalculate()
 	copyP := *p
 	copyP.Items = append([]models.PlaylistItem(nil), p.Items...)
 	return &copyP, nil
 }
 
-func (m *MockPlaylistRepository) RemoveItem(ctx context.Context, windowNumber int, itemID string) (*models.Playlist, error) {
+func (m *MockPlaylistRepository) RemoveItem(ctx context.Context, windowNumber int, windowID bson.ObjectID, itemID string) (*models.Playlist, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	p, exists := m.playlists[windowNumber]
@@ -229,6 +231,7 @@ func (m *MockPlaylistRepository) RemoveItem(ctx context.Context, windowNumber in
 		return nil, ErrNotFound
 	}
 	p.Items = updated
+	p.WindowID = windowID // stamp canonical window ObjectID
 	p.Recalculate()
 	copyP := *p
 	copyP.Items = append([]models.PlaylistItem(nil), p.Items...)

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/eva-bharat/media-sequencer/backend/internal/models"
+	"go.mongodb.org/mongo-driver/v2/bson"
 )
 
 func TestMockMediaRepository(t *testing.T) {
@@ -65,7 +66,7 @@ func TestMockPlaylistRepository(t *testing.T) {
 		Type:            models.MediaTypeImage,
 		DurationSeconds: 15,
 	}
-	updated, err := repo.AppendItem(ctx, 1, newItem)
+	updated, err := repo.AppendItem(ctx, 1, bson.ObjectID{}, newItem)
 	if err != nil {
 		t.Fatalf("failed to append item: %v", err)
 	}
@@ -77,7 +78,7 @@ func TestMockPlaylistRepository(t *testing.T) {
 	}
 
 	// Remove item
-	removed, err := repo.RemoveItem(ctx, 1, "it-1")
+	removed, err := repo.RemoveItem(ctx, 1, bson.ObjectID{}, "it-1")
 	if err != nil {
 		t.Fatalf("failed to remove item: %v", err)
 	}

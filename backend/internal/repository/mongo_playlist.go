@@ -35,17 +35,18 @@ func (r *MongoPlaylistRepository) FindByWindowNumber(ctx context.Context, window
 	return &p, nil
 }
 
+// FindByWindowIdOrNumber looks up a playlist by window number (preferred) or
+// by the window_id field (canonical Window ObjectID stored on the playlist).
+//
+// NOTE: We deliberately do NOT search by playlist._id here — that field is the
+// playlist's own MongoDB identity, which must not be conflated with window_id.
 func (r *MongoPlaylistRepository) FindByWindowIdOrNumber(ctx context.Context, idOrNumber string) (*models.Playlist, error) {
 	var filter bson.M
 	if num, err := strconv.Atoi(idOrNumber); err == nil && num > 0 {
 		filter = bson.M{"window_number": num}
 	} else if oid, err := bson.ObjectIDFromHex(idOrNumber); err == nil {
-		filter = bson.M{
-			"$or": []bson.M{
-				{"window_id": oid},
-				{"_id": oid},
-			},
-		}
+		// Search only by window_id — NOT by playlist._id (different entities).
+		filter = bson.M{"window_id": oid}
 	} else {
 		return nil, ErrNotFound
 	}
@@ -61,7 +62,7 @@ func (r *MongoPlaylistRepository) FindByWindowIdOrNumber(ctx context.Context, id
 	return &p, nil
 }
 
-func (r *MongoPlaylistRepository) AppendItem(ctx context.Context, windowNumber int, item models.PlaylistItem) (*models.Playlist, error) {
+func (r *MongoPlaylistRepository) AppendItem(ctx context.Context, windowNumber int, windowID bson.ObjectID, item models.PlaylistItem) (*models.Playlist, error) {
 	// Optimistic concurrency loop: retry up to 3 times on concurrent version conflict
 	for attempt := 0; attempt < 3; attempt++ {
 		p, err := r.FindByWindowNumber(ctx, windowNumber)
@@ -73,6 +74,7 @@ func (r *MongoPlaylistRepository) AppendItem(ctx context.Context, windowNumber i
 		item.Order = len(p.Items) + 1
 		p.Items = append(p.Items, item)
 		p.Recalculate()
+		p.WindowID = windowID // stamp canonical window ObjectID
 
 		filter := bson.M{
 			"window_number": windowNumber,
@@ -80,6 +82,7 @@ func (r *MongoPlaylistRepository) AppendItem(ctx context.Context, windowNumber i
 		}
 		update := bson.M{
 			"$set": bson.M{
+				"window_id":                       windowID,
 				"items":                           p.Items,
 				"total_sequence_duration_seconds": p.TotalSequenceDurationSeconds,
 				"version":                         p.Version,
@@ -100,18 +103,20 @@ func (r *MongoPlaylistRepository) AppendItem(ctx context.Context, windowNumber i
 	return nil, ErrConflict
 }
 
-func (r *MongoPlaylistRepository) UpdateItems(ctx context.Context, windowNumber int, items []models.PlaylistItem) (*models.Playlist, error) {
+func (r *MongoPlaylistRepository) UpdateItems(ctx context.Context, windowNumber int, windowID bson.ObjectID, items []models.PlaylistItem) (*models.Playlist, error) {
 	p, err := r.FindByWindowNumber(ctx, windowNumber)
 	if err != nil {
 		return nil, err
 	}
 
 	p.Items = items
+	p.WindowID = windowID // stamp canonical window ObjectID
 	p.Recalculate()
 
 	filter := bson.M{"window_number": windowNumber}
 	update := bson.M{
 		"$set": bson.M{
+			"window_id":                       windowID,
 			"items":                           p.Items,
 			"total_sequence_duration_seconds": p.TotalSequenceDurationSeconds,
 			"version":                         p.Version,
@@ -127,7 +132,7 @@ func (r *MongoPlaylistRepository) UpdateItems(ctx context.Context, windowNumber 
 	return p, nil
 }
 
-func (r *MongoPlaylistRepository) RemoveItem(ctx context.Context, windowNumber int, itemID string) (*models.Playlist, error) {
+func (r *MongoPlaylistRepository) RemoveItem(ctx context.Context, windowNumber int, windowID bson.ObjectID, itemID string) (*models.Playlist, error) {
 	p, err := r.FindByWindowNumber(ctx, windowNumber)
 	if err != nil {
 		return nil, err
@@ -148,11 +153,13 @@ func (r *MongoPlaylistRepository) RemoveItem(ctx context.Context, windowNumber i
 	}
 
 	p.Items = updatedItems
+	p.WindowID = windowID // stamp canonical window ObjectID
 	p.Recalculate()
 
 	filter := bson.M{"window_number": windowNumber}
 	update := bson.M{
 		"$set": bson.M{
+			"window_id":                       windowID,
 			"items":                           p.Items,
 			"total_sequence_duration_seconds": p.TotalSequenceDurationSeconds,
 			"version":                         p.Version,
