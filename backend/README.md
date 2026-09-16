@@ -14,8 +14,8 @@ Enterprise backend for the **Multi-Window Media Sequencer with Synchronized Play
 | **REST API Foundation** | **IMPLEMENTED** | `/health`, `/api/v1/health`, `/api/v1/time`, `/api/v1/media`, `/api/v1/windows`, `/api/v1/windows/{id}/playlist`. |
 | **Middleware & Error Handling** | **IMPLEMENTED** | Strict CORS, JSON envelopes, structured request logging, panic recovery. |
 | **Seed Data System** | **IMPLEMENTED** | Candidate-created baseline dataset populating 3 windows and 8 media assets. |
-| **Testing Suite** | **IMPLEMENTED** | Pure unit tests for config, models, repositories, services, handlers, middleware, and seeds. |
-| **5-Hour Cycle Engine** | **PLANNED** | Deterministic timeline math engine (to be implemented in next milestone). |
+| **Testing Suite** | **IMPLEMENTED** | Pure unit tests for config, models, repositories, services, handlers, middleware, seeds, and timeline engine. |
+| **5-Hour Cycle Engine** | **IMPLEMENTED** | Deterministic timeline math engine with continuous repetition, $[start, end)$ boundary convention, and sub-second precision ([documentation](docs/cycle_engine.md)). |
 | **WebSocket Hub & Real-Time Sync** | **PLANNED** | Full-duplex WebSocket broadcast hub and client clock synchronization (next milestone). |
 | **React Frontend** | **NOT YET IMPLEMENTED** | Multi-window UI & dual-buffer player will follow backend completion. |
 

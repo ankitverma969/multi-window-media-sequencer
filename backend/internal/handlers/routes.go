@@ -45,6 +45,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/v1/windows/{id}/playlist", playlistHandler.GetPlaylist)
 	mux.HandleFunc("POST /api/v1/windows/{id}/playlist/items", playlistHandler.AddPlaylistItem)
 	mux.HandleFunc("DELETE /api/v1/windows/{id}/playlist/items/{itemId}", playlistHandler.RemovePlaylistItem)
+	mux.HandleFunc("GET /api/v1/windows/{id}/playback-state", playlistHandler.GetPlaybackState)
 
 	// Middleware chain: Recovery -> Logger -> CORS -> Mux
 	corsMiddleware := middleware.CORS(deps.Config.CORSAllowedOrigins)

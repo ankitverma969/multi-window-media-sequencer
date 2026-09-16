@@ -95,6 +95,7 @@ type PlaylistItem struct {
 	Type            MediaType `bson:"type" json:"type"`
 	URL             string    `bson:"url" json:"url"`
 	DurationSeconds int       `bson:"duration_seconds" json:"duration_seconds"`
+	DurationMs      int64     `bson:"duration_ms,omitempty" json:"duration_ms,omitempty"`
 	Order           int       `bson:"order" json:"order"`
 }
 

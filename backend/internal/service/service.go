@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/eva-bharat/media-sequencer/backend/internal/models"
+	"github.com/eva-bharat/media-sequencer/backend/internal/timeline"
 )
 
 var (
@@ -31,6 +33,7 @@ type PlaylistService interface {
 	AddPlaylistItem(ctx context.Context, windowNumber int, mediaKey string, customDuration int) (*models.Playlist, error)
 	RemovePlaylistItem(ctx context.Context, windowNumber int, itemID string) (*models.Playlist, error)
 	UpdatePlaylist(ctx context.Context, windowNumber int, items []models.PlaylistItem) (*models.Playlist, error)
+	GetPlaybackState(ctx context.Context, windowNumber int, queryTime time.Time) (*timeline.PlaybackState, error)
 }
 
 type SyncService interface {

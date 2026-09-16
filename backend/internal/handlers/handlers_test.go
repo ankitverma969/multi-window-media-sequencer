@@ -173,4 +173,24 @@ func TestPlaylistEndpoints(t *testing.T) {
 	if len(items) != 1 {
 		t.Errorf("expected 1 item in playlist, got %d", len(items))
 	}
+
+	// 3. Query playback state via GET /api/v1/windows/1/playback-state
+	reqState := httptest.NewRequest(http.MethodGet, "/api/v1/windows/1/playback-state", nil)
+	recState := httptest.NewRecorder()
+
+	router.ServeHTTP(recState, reqState)
+
+	if recState.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on playback state, got %d: %s", recState.Code, recState.Body.String())
+	}
+
+	var stateResp utils.APIResponse
+	_ = json.NewDecoder(recState.Body).Decode(&stateResp)
+	stateMap := stateResp.Data.(map[string]any)
+	if stateMap["media_key"] != "M1" {
+		t.Errorf("expected active media_key M1, got %v", stateMap["media_key"])
+	}
+	if stateMap["status"] != "NORMAL" {
+		t.Errorf("expected status NORMAL, got %v", stateMap["status"])
+	}
 }

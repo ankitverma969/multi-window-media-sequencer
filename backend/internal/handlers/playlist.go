@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/eva-bharat/media-sequencer/backend/internal/service"
 	"github.com/eva-bharat/media-sequencer/backend/internal/utils"
@@ -108,4 +109,39 @@ func (h *PlaylistHandler) RemovePlaylistItem(w http.ResponseWriter, r *http.Requ
 	}
 
 	utils.WriteJSON(w, http.StatusOK, updated)
+}
+
+func (h *PlaylistHandler) GetPlaybackState(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	windowNumber, err := strconv.Atoi(idStr)
+	if err != nil || windowNumber <= 0 {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID must be a positive integer")
+		return
+	}
+
+	queryTime := time.Now().UTC()
+	if timeStr := r.URL.Query().Get("time"); timeStr != "" {
+		parsedTime, parseErr := time.Parse(time.RFC3339, timeStr)
+		if parseErr != nil {
+			utils.WriteError(w, http.StatusBadRequest, "INVALID_TIMESTAMP", "Timestamp must be in RFC3339 format")
+			return
+		}
+		queryTime = parsedTime.UTC()
+	}
+
+	state, err := h.playlistService.GetPlaybackState(r.Context(), windowNumber, queryTime)
+	if err != nil {
+		if errors.Is(err, service.ErrWindowNotFound) {
+			utils.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Window not found")
+			return
+		}
+		if errors.Is(err, service.ErrPlaylistNotFound) {
+			utils.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Playlist not found for window")
+			return
+		}
+		utils.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to calculate playback state")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, state)
 }

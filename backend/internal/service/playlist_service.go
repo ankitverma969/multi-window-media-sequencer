@@ -4,16 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/eva-bharat/media-sequencer/backend/internal/models"
 	"github.com/eva-bharat/media-sequencer/backend/internal/repository"
+	"github.com/eva-bharat/media-sequencer/backend/internal/timeline"
 	"github.com/google/uuid"
 )
 
 type defaultPlaylistService struct {
-	playlistRepo repository.PlaylistRepository
-	mediaRepo    repository.MediaRepository
-	windowRepo   repository.WindowRepository
+	playlistRepo   repository.PlaylistRepository
+	mediaRepo      repository.MediaRepository
+	windowRepo     repository.WindowRepository
+	timelineEngine *timeline.Engine
 }
 
 func NewPlaylistService(
@@ -22,9 +25,10 @@ func NewPlaylistService(
 	windowRepo repository.WindowRepository,
 ) PlaylistService {
 	return &defaultPlaylistService{
-		playlistRepo: playlistRepo,
-		mediaRepo:    mediaRepo,
-		windowRepo:   windowRepo,
+		playlistRepo:   playlistRepo,
+		mediaRepo:      mediaRepo,
+		windowRepo:     windowRepo,
+		timelineEngine: timeline.NewEngine(),
 	}
 }
 
@@ -99,4 +103,24 @@ func (s *defaultPlaylistService) UpdatePlaylist(ctx context.Context, windowNumbe
 		return nil, fmt.Errorf("failed to update playlist for window %d: %w", windowNumber, err)
 	}
 	return updatedPlaylist, nil
+}
+
+func (s *defaultPlaylistService) GetPlaybackState(ctx context.Context, windowNumber int, queryTime time.Time) (*timeline.PlaybackState, error) {
+	window, err := s.windowRepo.FindByNumber(ctx, windowNumber)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrWindowNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve window %d: %w", windowNumber, err)
+	}
+
+	playlist, err := s.playlistRepo.FindByWindowNumber(ctx, windowNumber)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrPlaylistNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve playlist for window %d: %w", windowNumber, err)
+	}
+
+	return s.timelineEngine.Calculate(window, playlist, queryTime)
 }
