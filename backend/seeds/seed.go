@@ -69,6 +69,27 @@ var initialMediaCatalog = []models.Media{
 		DurationSeconds: 18,
 	},
 	{
+		MediaKey:        "M8",
+		Name:            "Tears of Steel Preview (M8)",
+		Type:            models.MediaTypeVideo,
+		URL:             "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+		DurationSeconds: 16,
+	},
+	{
+		MediaKey:        "M9",
+		Name:            "Morning Sunrise Landscape (M9)",
+		Type:            models.MediaTypeImage,
+		URL:             "https://images.unsplash.com/photo-1470240731273-7821a6eeb6bd?w=1200",
+		DurationSeconds: 12,
+	},
+	{
+		MediaKey:        "M10",
+		Name:            "Abstract Geometric Display (M10)",
+		Type:            models.MediaTypeImage,
+		URL:             "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?w=1200",
+		DurationSeconds: 15,
+	},
+	{
 		MediaKey:        "BLANK_10",
 		Name:            "Configured 10s Intermission Blank",
 		Type:            models.MediaTypeBlank,
@@ -93,7 +114,7 @@ func SeedInitialData(
 		}
 	}
 
-	// 2. Seed 3 Windows
+	// 2. Seed 4 Windows (for clean 2x2 grid)
 	baseMidnight := time.Now().UTC().Truncate(24 * time.Hour)
 	windowConfigs := []struct {
 		number int
@@ -113,7 +134,12 @@ func SeedInitialData(
 		{
 			number: 3,
 			name:   "Display Window 3 (Lobby)",
-			items:  []string{"M1", "M6", "M7"},
+			items:  []string{"M6", "M7", "M8"},
+		},
+		{
+			number: 4,
+			name:   "Display Window 4 (Balcony)",
+			items:  []string{"M9", "M10", "M1"},
 		},
 	}
 
