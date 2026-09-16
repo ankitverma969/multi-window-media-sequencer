@@ -2,7 +2,21 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import { calculateServerOffset } from '../playback/timeSync'
 import { ConnectionStates } from '../playback/playbackMachine'
 
-const WS_BASE = import.meta.env.VITE_WS_URL || 'ws://localhost:8080'
+function getWsBaseUrl() {
+  if (import.meta.env.VITE_WS_URL !== undefined && import.meta.env.VITE_WS_URL !== '') {
+    return import.meta.env.VITE_WS_URL
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    if (window.location.port === '5173') {
+      return 'ws://localhost:8080'
+    }
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${protocol}//${window.location.host}`
+  }
+  return 'ws://localhost:8080'
+}
+
+const WS_BASE = getWsBaseUrl()
 
 /**
  * Custom hook managing WebSocket connection for a specific display window.

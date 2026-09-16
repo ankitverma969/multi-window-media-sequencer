@@ -2,7 +2,21 @@
  * Centralized REST API client for the EVA Bharat Media Sequencer backend.
  */
 
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8080'
+function getApiBaseUrl() {
+  if (import.meta.env.VITE_API_URL !== undefined && import.meta.env.VITE_API_URL !== '') {
+    return import.meta.env.VITE_API_URL
+  }
+  if (typeof window !== 'undefined' && window.location) {
+    if (window.location.port === '5173') {
+      return 'http://localhost:8080'
+    }
+    // Behind reverse proxy (Nginx in Docker / Production)
+    return ''
+  }
+  return 'http://localhost:8080'
+}
+
+const BASE_URL = getApiBaseUrl()
 
 class ApiError extends Error {
   constructor(message, status, code) {

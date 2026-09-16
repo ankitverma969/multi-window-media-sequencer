@@ -42,4 +42,7 @@ EXPOSE 8080
 ENV PORT=8080
 ENV ENVIRONMENT=production
 
+HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
+    CMD wget -q --spider http://localhost:${PORT}/health || exit 1
+
 ENTRYPOINT ["/app/server"]
