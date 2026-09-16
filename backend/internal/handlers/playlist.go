@@ -87,8 +87,10 @@ func (h *PlaylistHandler) AddPlaylistItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Use CustomDurationSeconds if provided; fall back to the alias field Duration.
+	// Negative values are intentionally passed through to the service for validation.
 	customDuration := req.CustomDurationSeconds
-	if customDuration <= 0 {
+	if customDuration == 0 && req.Duration > 0 {
 		customDuration = req.Duration
 	}
 
