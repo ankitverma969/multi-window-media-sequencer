@@ -94,7 +94,20 @@ func (r *MongoMediaRepository) Upsert(ctx context.Context, m *models.Media) erro
 	}
 
 	filter := bson.M{"media_key": m.MediaKey}
-	update := bson.M{"$set": m}
+	update := bson.M{
+		"$set": bson.M{
+			"name":             m.Name,
+			"type":             m.Type,
+			"url":              m.URL,
+			"duration_seconds": m.DurationSeconds,
+			"updated_at":       m.UpdatedAt,
+		},
+		"$setOnInsert": bson.M{
+			"_id":        m.ID,
+			"media_key":  m.MediaKey,
+			"created_at": m.CreatedAt,
+		},
+	}
 	opts := options.UpdateOne().SetUpsert(true)
 
 	_, err := r.collection.UpdateOne(ctx, filter, update, opts)

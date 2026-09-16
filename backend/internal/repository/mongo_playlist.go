@@ -176,7 +176,19 @@ func (r *MongoPlaylistRepository) Upsert(ctx context.Context, p *models.Playlist
 	p.Recalculate()
 
 	filter := bson.M{"window_number": p.WindowNumber}
-	update := bson.M{"$set": p}
+	update := bson.M{
+		"$set": bson.M{
+			"window_id":                       p.WindowID,
+			"total_sequence_duration_seconds": p.TotalSequenceDurationSeconds,
+			"items":                           p.Items,
+			"version":                         p.Version,
+			"updated_at":                      p.UpdatedAt,
+		},
+		"$setOnInsert": bson.M{
+			"_id":           p.ID,
+			"window_number": p.WindowNumber,
+		},
+	}
 	opts := options.UpdateOne().SetUpsert(true)
 
 	_, err := r.collection.UpdateOne(ctx, filter, update, opts)

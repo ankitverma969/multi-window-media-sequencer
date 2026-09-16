@@ -102,7 +102,20 @@ func (r *MongoWindowRepository) Upsert(ctx context.Context, w *models.Window) er
 	}
 
 	filter := bson.M{"window_number": w.WindowNumber}
-	update := bson.M{"$set": w}
+	update := bson.M{
+		"$set": bson.M{
+			"name":                   w.Name,
+			"cycle_duration_seconds": w.CycleDurationSeconds,
+			"cycle_start_time":       w.CycleStartTime,
+			"is_active":              w.IsActive,
+			"updated_at":             w.UpdatedAt,
+		},
+		"$setOnInsert": bson.M{
+			"_id":           w.ID,
+			"window_number": w.WindowNumber,
+			"created_at":    w.CreatedAt,
+		},
+	}
 	opts := options.UpdateOne().SetUpsert(true)
 
 	_, err := r.collection.UpdateOne(ctx, filter, update, opts)
