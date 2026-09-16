@@ -46,7 +46,7 @@ func TestPlaylistServiceAddPlaylistItem(t *testing.T) {
 	svc := NewPlaylistService(playlistRepo, mediaRepo, windowRepo)
 
 	// 1. Test adding existing media
-	updated, err := svc.AddPlaylistItem(ctx, 1, "M1", 0)
+	updated, err := svc.AddPlaylistItem(ctx, "1", "M1", 0)
 	if err != nil {
 		t.Fatalf("unexpected error adding item: %v", err)
 	}
@@ -65,13 +65,13 @@ func TestPlaylistServiceAddPlaylistItem(t *testing.T) {
 	}
 
 	// 2. Test adding non-existent media
-	_, err = svc.AddPlaylistItem(ctx, 1, "NON_EXISTENT", 0)
+	_, err = svc.AddPlaylistItem(ctx, "1", "NON_EXISTENT", 0)
 	if err != ErrMediaNotFound {
 		t.Errorf("expected ErrMediaNotFound, got %v", err)
 	}
 
 	// 3. Test adding to non-existent window
-	_, err = svc.AddPlaylistItem(ctx, 99, "M1", 0)
+	_, err = svc.AddPlaylistItem(ctx, "99", "M1", 0)
 	if err != ErrWindowNotFound {
 		t.Errorf("expected ErrWindowNotFound, got %v", err)
 	}
@@ -92,5 +92,57 @@ func TestMediaServiceValidation(t *testing.T) {
 	err := svc.CreateMedia(ctx, invalidMedia)
 	if err == nil {
 		t.Errorf("expected validation error for empty media key")
+	}
+}
+
+func TestSyncService(t *testing.T) {
+	ctx := context.Background()
+	mediaRepo := repository.NewMockMediaRepository()
+	syncRepo := repository.NewMockSyncRepository()
+
+	// Seed media M2
+	_ = mediaRepo.Create(ctx, &models.Media{
+		MediaKey:        "M2",
+		Name:            "Sync Promo",
+		Type:            models.MediaTypeImage,
+		URL:             "https://example.com/m2.jpg",
+		DurationSeconds: 15,
+	})
+
+	syncSvc := NewSyncService(syncRepo, mediaRepo)
+
+	// 1. Trigger valid sync
+	event, err := syncSvc.TriggerSync(ctx, "M2", 15, 1000, "admin")
+	if err != nil {
+		t.Fatalf("unexpected error triggering sync: %v", err)
+	}
+	if event.MediaKey != "M2" || event.DurationSeconds != 15 {
+		t.Errorf("unexpected event: %+v", event)
+	}
+
+	// 2. Query active sync
+	active, err := syncSvc.GetActiveSync(ctx)
+	if err != nil {
+		t.Fatalf("unexpected error getting active sync: %v", err)
+	}
+	if active == nil || active.EventID != event.EventID {
+		t.Errorf("expected active event %s, got %+v", event.EventID, active)
+	}
+
+	// 3. Trigger invalid duration
+	_, err = syncSvc.TriggerSync(ctx, "M2", 0, 1000, "admin")
+	if err == nil {
+		t.Errorf("expected error for 0 duration")
+	}
+
+	// 4. Trigger non-existent media
+	_, err = syncSvc.TriggerSync(ctx, "NON_EXISTENT", 15, 1000, "admin")
+	if err != ErrMediaNotFound {
+		t.Errorf("expected ErrMediaNotFound, got %v", err)
+	}
+
+	// 5. Cancel sync
+	if err := syncSvc.CancelSync(ctx, event.EventID); err != nil {
+		t.Fatalf("failed to cancel sync: %v", err)
 	}
 }

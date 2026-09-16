@@ -56,6 +56,7 @@ func main() {
 	mediaRepo := repository.NewMongoMediaRepository(db.Database)
 	windowRepo := repository.NewMongoWindowRepository(db.Database)
 	playlistRepo := repository.NewMongoPlaylistRepository(db.Database)
+	syncRepo := repository.NewMongoSyncRepository(db.Database)
 
 	// 6. Seed initial development data if configured
 	if cfg.SeedOnStartup {
@@ -68,6 +69,7 @@ func main() {
 	mediaService := service.NewMediaService(mediaRepo)
 	windowService := service.NewWindowService(windowRepo)
 	playlistService := service.NewPlaylistService(playlistRepo, mediaRepo, windowRepo)
+	syncService := service.NewSyncService(syncRepo, mediaRepo)
 
 	// 8. Build HTTP Router & Middleware Stack
 	router := handlers.NewRouter(handlers.Dependencies{
@@ -76,6 +78,7 @@ func main() {
 		WindowService:   windowService,
 		MediaService:    mediaService,
 		PlaylistService: playlistService,
+		SyncService:     syncService,
 	})
 
 	// 9. Configure HTTP Server

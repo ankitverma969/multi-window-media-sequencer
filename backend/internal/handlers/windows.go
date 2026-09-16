@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"strconv"
 
 	"github.com/eva-bharat/media-sequencer/backend/internal/service"
 	"github.com/eva-bharat/media-sequencer/backend/internal/utils"
@@ -30,13 +29,15 @@ func (h *WindowHandler) ListWindows(w http.ResponseWriter, r *http.Request) {
 
 func (h *WindowHandler) GetWindow(w http.ResponseWriter, r *http.Request) {
 	idStr := r.PathValue("id")
-	windowNumber, err := strconv.Atoi(idStr)
-	if err != nil || windowNumber <= 0 {
-		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID must be a positive integer")
+	if idStr == "" {
+		idStr = r.PathValue("windowId")
+	}
+	if idStr == "" {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID or number is required")
 		return
 	}
 
-	window, err := h.windowService.GetWindow(r.Context(), windowNumber)
+	window, err := h.windowService.GetWindow(r.Context(), idStr)
 	if err != nil {
 		if errors.Is(err, service.ErrWindowNotFound) {
 			utils.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Window not found")

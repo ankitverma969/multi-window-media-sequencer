@@ -59,6 +59,19 @@ func (r *MongoSyncRepository) FindActive(ctx context.Context, now time.Time) (*m
 	return &event, nil
 }
 
+func (r *MongoSyncRepository) FindByID(ctx context.Context, eventID string) (*models.SyncEvent, error) {
+	filter := bson.M{"event_id": eventID}
+	var event models.SyncEvent
+	err := r.collection.FindOne(ctx, filter).Decode(&event)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to find sync event %s: %w", eventID, err)
+	}
+	return &event, nil
+}
+
 func (r *MongoSyncRepository) UpdateStatus(ctx context.Context, eventID string, status models.SyncStatus) error {
 	filter := bson.M{"event_id": eventID}
 	update := bson.M{"$set": bson.M{"status": status}}

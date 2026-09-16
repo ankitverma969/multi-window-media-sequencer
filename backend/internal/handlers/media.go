@@ -47,3 +47,26 @@ func (h *MediaHandler) CreateMedia(w http.ResponseWriter, r *http.Request) {
 
 	utils.WriteJSON(w, http.StatusCreated, req)
 }
+
+func (h *MediaHandler) GetMedia(w http.ResponseWriter, r *http.Request) {
+	idStr := r.PathValue("id")
+	if idStr == "" {
+		idStr = r.PathValue("mediaId")
+	}
+	if idStr == "" {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_MEDIA_ID", "Media ID or key is required")
+		return
+	}
+
+	item, err := h.mediaService.GetMedia(r.Context(), idStr)
+	if err != nil {
+		if errors.Is(err, service.ErrMediaNotFound) {
+			utils.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Media not found")
+			return
+		}
+		utils.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to retrieve media")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, item)
+}

@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
+	"github.com/eva-bharat/media-sequencer/backend/internal/models"
 	"github.com/eva-bharat/media-sequencer/backend/internal/service"
 	"github.com/eva-bharat/media-sequencer/backend/internal/utils"
 )
@@ -27,16 +27,31 @@ type AddItemRequest struct {
 	CustomDurationSeconds int    `json:"custom_duration_seconds"`
 }
 
+type UpdatePlaylistRequest struct {
+	Items []models.PlaylistItem `json:"items"`
+}
+
+func getWindowID(r *http.Request) string {
+	id := r.PathValue("id")
+	if id == "" {
+		id = r.PathValue("windowId")
+	}
+	return strings.TrimSpace(id)
+}
+
 func (h *PlaylistHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	windowNumber, err := strconv.Atoi(idStr)
-	if err != nil || windowNumber <= 0 {
-		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID must be a positive integer")
+	idStr := getWindowID(r)
+	if idStr == "" {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID or number is required")
 		return
 	}
 
-	p, err := h.playlistService.GetPlaylist(r.Context(), windowNumber)
+	p, err := h.playlistService.GetPlaylist(r.Context(), idStr)
 	if err != nil {
+		if errors.Is(err, service.ErrWindowNotFound) {
+			utils.WriteError(w, http.StatusNotFound, "WINDOW_NOT_FOUND", "Window not found")
+			return
+		}
 		if errors.Is(err, service.ErrPlaylistNotFound) {
 			utils.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Playlist not found for window")
 			return
@@ -49,10 +64,9 @@ func (h *PlaylistHandler) GetPlaylist(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *PlaylistHandler) AddPlaylistItem(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	windowNumber, err := strconv.Atoi(idStr)
-	if err != nil || windowNumber <= 0 {
-		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID must be a positive integer")
+	idStr := getWindowID(r)
+	if idStr == "" {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID or number is required")
 		return
 	}
 
@@ -67,7 +81,7 @@ func (h *PlaylistHandler) AddPlaylistItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	updated, err := h.playlistService.AddPlaylistItem(r.Context(), windowNumber, req.MediaKey, req.CustomDurationSeconds)
+	updated, err := h.playlistService.AddPlaylistItem(r.Context(), idStr, req.MediaKey, req.CustomDurationSeconds)
 	if err != nil {
 		if errors.Is(err, service.ErrWindowNotFound) {
 			utils.WriteError(w, http.StatusNotFound, "WINDOW_NOT_FOUND", "Specified window does not exist")
@@ -77,6 +91,14 @@ func (h *PlaylistHandler) AddPlaylistItem(w http.ResponseWriter, r *http.Request
 			utils.WriteError(w, http.StatusNotFound, "MEDIA_NOT_FOUND", "Specified media key does not exist")
 			return
 		}
+		if errors.Is(err, service.ErrInvalidInput) {
+			utils.WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrConflict) {
+			utils.WriteError(w, http.StatusConflict, "CONCURRENT_CONFLICT", "Concurrent update conflict. Please retry.")
+			return
+		}
 		utils.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to add playlist item")
 		return
 	}
@@ -84,11 +106,61 @@ func (h *PlaylistHandler) AddPlaylistItem(w http.ResponseWriter, r *http.Request
 	utils.WriteJSON(w, http.StatusCreated, updated)
 }
 
+func (h *PlaylistHandler) UpdatePlaylist(w http.ResponseWriter, r *http.Request) {
+	idStr := getWindowID(r)
+	if idStr == "" {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID or number is required")
+		return
+	}
+
+	// Support both {"items": [...]} envelope and raw [...] array
+	var req UpdatePlaylistRequest
+	decoder := json.NewDecoder(r.Body)
+
+	// Try reading as raw slice first
+	var rawItems []models.PlaylistItem
+	var err error
+	var bodyBytes []byte
+	var bodyMap map[string]json.RawMessage
+
+	if err = decoder.Decode(&bodyMap); err == nil {
+		if itemsRaw, ok := bodyMap["items"]; ok {
+			_ = json.Unmarshal(itemsRaw, &rawItems)
+		}
+	}
+
+	if rawItems == nil {
+		utils.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON payload: 'items' array required")
+		return
+	}
+	req.Items = rawItems
+
+	updated, err := h.playlistService.UpdatePlaylist(r.Context(), idStr, req.Items)
+	if err != nil {
+		if errors.Is(err, service.ErrWindowNotFound) {
+			utils.WriteError(w, http.StatusNotFound, "WINDOW_NOT_FOUND", "Window not found")
+			return
+		}
+		if errors.Is(err, service.ErrPlaylistNotFound) {
+			utils.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Playlist not found for window")
+			return
+		}
+		if errors.Is(err, service.ErrInvalidInput) {
+			utils.WriteError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+			return
+		}
+		utils.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "Failed to update playlist")
+		return
+	}
+
+	utils.WriteJSON(w, http.StatusOK, updated)
+	_ = bodyBytes
+}
+
 func (h *PlaylistHandler) RemovePlaylistItem(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	windowNumber, err := strconv.Atoi(idStr)
-	if err != nil || windowNumber <= 0 {
-		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID must be a positive integer")
+	idStr := getWindowID(r)
+	if idStr == "" {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID or number is required")
 		return
 	}
 
@@ -98,8 +170,12 @@ func (h *PlaylistHandler) RemovePlaylistItem(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	updated, err := h.playlistService.RemovePlaylistItem(r.Context(), windowNumber, itemID)
+	updated, err := h.playlistService.RemovePlaylistItem(r.Context(), idStr, itemID)
 	if err != nil {
+		if errors.Is(err, service.ErrWindowNotFound) {
+			utils.WriteError(w, http.StatusNotFound, "WINDOW_NOT_FOUND", "Window not found")
+			return
+		}
 		if errors.Is(err, service.ErrPlaylistNotFound) {
 			utils.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Item or playlist not found")
 			return
@@ -112,10 +188,9 @@ func (h *PlaylistHandler) RemovePlaylistItem(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *PlaylistHandler) GetPlaybackState(w http.ResponseWriter, r *http.Request) {
-	idStr := r.PathValue("id")
-	windowNumber, err := strconv.Atoi(idStr)
-	if err != nil || windowNumber <= 0 {
-		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID must be a positive integer")
+	idStr := getWindowID(r)
+	if idStr == "" {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_WINDOW_ID", "Window ID or number is required")
 		return
 	}
 
@@ -129,7 +204,7 @@ func (h *PlaylistHandler) GetPlaybackState(w http.ResponseWriter, r *http.Reques
 		queryTime = parsedTime.UTC()
 	}
 
-	state, err := h.playlistService.GetPlaybackState(r.Context(), windowNumber, queryTime)
+	state, err := h.playlistService.GetPlaybackState(r.Context(), idStr, queryTime)
 	if err != nil {
 		if errors.Is(err, service.ErrWindowNotFound) {
 			utils.WriteError(w, http.StatusNotFound, "NOT_FOUND", "Window not found")

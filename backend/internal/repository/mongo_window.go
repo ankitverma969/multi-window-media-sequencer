@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/eva-bharat/media-sequencer/backend/internal/models"
@@ -48,6 +49,27 @@ func (r *MongoWindowRepository) FindByNumber(ctx context.Context, windowNumber i
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("failed to find window %d: %w", windowNumber, err)
+	}
+	return &w, nil
+}
+
+func (r *MongoWindowRepository) FindByIdOrNumber(ctx context.Context, idOrNumber string) (*models.Window, error) {
+	var filter bson.M
+	if num, err := strconv.Atoi(idOrNumber); err == nil && num > 0 {
+		filter = bson.M{"window_number": num}
+	} else if oid, err := bson.ObjectIDFromHex(idOrNumber); err == nil {
+		filter = bson.M{"_id": oid}
+	} else {
+		return nil, ErrNotFound
+	}
+
+	var w models.Window
+	err := r.collection.FindOne(ctx, filter).Decode(&w)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to find window %s: %w", idOrNumber, err)
 	}
 	return &w, nil
 }

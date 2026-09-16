@@ -41,13 +41,27 @@ func (r *MongoMediaRepository) Create(ctx context.Context, m *models.Media) erro
 }
 
 func (r *MongoMediaRepository) FindByKey(ctx context.Context, mediaKey string) (*models.Media, error) {
+	return r.FindByIdOrKey(ctx, mediaKey)
+}
+
+func (r *MongoMediaRepository) FindByIdOrKey(ctx context.Context, idOrKey string) (*models.Media, error) {
+	filter := bson.M{"media_key": idOrKey}
+	if oid, err := bson.ObjectIDFromHex(idOrKey); err == nil {
+		filter = bson.M{
+			"$or": []bson.M{
+				{"_id": oid},
+				{"media_key": idOrKey},
+			},
+		}
+	}
+
 	var m models.Media
-	err := r.collection.FindOne(ctx, bson.M{"media_key": mediaKey}).Decode(&m)
+	err := r.collection.FindOne(ctx, filter).Decode(&m)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("failed to find media by key %s: %w", mediaKey, err)
+		return nil, fmt.Errorf("failed to find media %s: %w", idOrKey, err)
 	}
 	return &m, nil
 }

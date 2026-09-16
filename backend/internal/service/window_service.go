@@ -24,13 +24,13 @@ func (s *defaultWindowService) ListWindows(ctx context.Context) ([]models.Window
 	return s.windowRepo.ListAll(ctx)
 }
 
-func (s *defaultWindowService) GetWindow(ctx context.Context, windowNumber int) (*models.Window, error) {
-	w, err := s.windowRepo.FindByNumber(ctx, windowNumber)
+func (s *defaultWindowService) GetWindow(ctx context.Context, idOrNumber string) (*models.Window, error) {
+	w, err := s.windowRepo.FindByIdOrNumber(ctx, idOrNumber)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrWindowNotFound
 		}
-		return nil, fmt.Errorf("failed to retrieve window %d: %w", windowNumber, err)
+		return nil, fmt.Errorf("failed to retrieve window %s: %w", idOrNumber, err)
 	}
 	return w, nil
 }

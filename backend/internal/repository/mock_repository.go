@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
 
@@ -36,14 +37,19 @@ func (m *MockMediaRepository) Create(ctx context.Context, item *models.Media) er
 }
 
 func (m *MockMediaRepository) FindByKey(ctx context.Context, mediaKey string) (*models.Media, error) {
+	return m.FindByIdOrKey(ctx, mediaKey)
+}
+
+func (m *MockMediaRepository) FindByIdOrKey(ctx context.Context, idOrKey string) (*models.Media, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	item, exists := m.media[mediaKey]
-	if !exists {
-		return nil, ErrNotFound
+	for _, item := range m.media {
+		if item.MediaKey == idOrKey || item.ID.Hex() == idOrKey {
+			copyItem := *item
+			return &copyItem, nil
+		}
 	}
-	copyItem := *item
-	return &copyItem, nil
+	return nil, ErrNotFound
 }
 
 func (m *MockMediaRepository) ListAll(ctx context.Context) ([]models.Media, error) {
@@ -104,6 +110,18 @@ func (m *MockWindowRepository) FindByNumber(ctx context.Context, windowNumber in
 	return &copyW, nil
 }
 
+func (m *MockWindowRepository) FindByIdOrNumber(ctx context.Context, idOrNumber string) (*models.Window, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, w := range m.windows {
+		if strconv.Itoa(w.WindowNumber) == idOrNumber || w.ID.Hex() == idOrNumber {
+			copyW := *w
+			return &copyW, nil
+		}
+	}
+	return nil, ErrNotFound
+}
+
 func (m *MockWindowRepository) ListAll(ctx context.Context) ([]models.Window, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -147,6 +165,19 @@ func (m *MockPlaylistRepository) FindByWindowNumber(ctx context.Context, windowN
 	copyP := *p
 	copyP.Items = append([]models.PlaylistItem(nil), p.Items...)
 	return &copyP, nil
+}
+
+func (m *MockPlaylistRepository) FindByWindowIdOrNumber(ctx context.Context, idOrNumber string) (*models.Playlist, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, p := range m.playlists {
+		if strconv.Itoa(p.WindowNumber) == idOrNumber || p.WindowID.Hex() == idOrNumber || p.ID.Hex() == idOrNumber {
+			copyP := *p
+			copyP.Items = append([]models.PlaylistItem(nil), p.Items...)
+			return &copyP, nil
+		}
+	}
+	return nil, ErrNotFound
 }
 
 func (m *MockPlaylistRepository) AppendItem(ctx context.Context, windowNumber int, item models.PlaylistItem) (*models.Playlist, error) {
@@ -251,6 +282,18 @@ func (m *MockSyncRepository) FindActive(ctx context.Context, now time.Time) (*mo
 		}
 	}
 	return nil, nil
+}
+
+func (m *MockSyncRepository) FindByID(ctx context.Context, eventID string) (*models.SyncEvent, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, ev := range m.events {
+		if ev.EventID == eventID || ev.ID.Hex() == eventID {
+			copyEv := *ev
+			return &copyEv, nil
+		}
+	}
+	return nil, ErrNotFound
 }
 
 func (m *MockSyncRepository) UpdateStatus(ctx context.Context, eventID string, status models.SyncStatus) error {

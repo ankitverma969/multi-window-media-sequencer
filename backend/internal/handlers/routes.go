@@ -14,6 +14,7 @@ type Dependencies struct {
 	WindowService   service.WindowService
 	MediaService    service.MediaService
 	PlaylistService service.PlaylistService
+	SyncService     service.SyncService
 }
 
 // NewRouter constructs and configures the HTTP multiplexer and middleware chain.
@@ -25,6 +26,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	mediaHandler := NewMediaHandler(deps.MediaService)
 	windowHandler := NewWindowHandler(deps.WindowService)
 	playlistHandler := NewPlaylistHandler(deps.PlaylistService)
+	syncHandler := NewSyncHandler(deps.SyncService)
 
 	// Health check endpoints
 	mux.HandleFunc("GET /health", healthHandler.HealthCheck)
@@ -36,16 +38,31 @@ func NewRouter(deps Dependencies) http.Handler {
 	// Media catalog endpoints
 	mux.HandleFunc("GET /api/v1/media", mediaHandler.ListMedia)
 	mux.HandleFunc("POST /api/v1/media", mediaHandler.CreateMedia)
+	mux.HandleFunc("GET /api/v1/media/{id}", mediaHandler.GetMedia)
 
 	// Window endpoints
 	mux.HandleFunc("GET /api/v1/windows", windowHandler.ListWindows)
 	mux.HandleFunc("GET /api/v1/windows/{id}", windowHandler.GetWindow)
 
-	// Playlist endpoints
+	// Playlist endpoints (supporting both /playlist and /playlist/items routes)
 	mux.HandleFunc("GET /api/v1/windows/{id}/playlist", playlistHandler.GetPlaylist)
+	mux.HandleFunc("POST /api/v1/windows/{id}/playlist", playlistHandler.AddPlaylistItem)
 	mux.HandleFunc("POST /api/v1/windows/{id}/playlist/items", playlistHandler.AddPlaylistItem)
+	mux.HandleFunc("PUT /api/v1/windows/{id}/playlist", playlistHandler.UpdatePlaylist)
+	mux.HandleFunc("DELETE /api/v1/windows/{id}/playlist/{itemId}", playlistHandler.RemovePlaylistItem)
 	mux.HandleFunc("DELETE /api/v1/windows/{id}/playlist/items/{itemId}", playlistHandler.RemovePlaylistItem)
+
+	// Playback state endpoints (derived from 5-hour cycle timeline engine)
+	mux.HandleFunc("GET /api/v1/windows/{id}/playback", playlistHandler.GetPlaybackState)
 	mux.HandleFunc("GET /api/v1/windows/{id}/playback-state", playlistHandler.GetPlaybackState)
+
+	// Synchronization endpoints
+	if deps.SyncService != nil {
+		mux.HandleFunc("POST /api/v1/sync", syncHandler.TriggerSync)
+		mux.HandleFunc("GET /api/v1/sync/current", syncHandler.GetActiveSync)
+		mux.HandleFunc("GET /api/v1/sync/{id}", syncHandler.GetSyncEvent)
+		mux.HandleFunc("POST /api/v1/sync/{id}/cancel", syncHandler.CancelSync)
+	}
 
 	// Middleware chain: Recovery -> Logger -> CORS -> Mux
 	corsMiddleware := middleware.CORS(deps.Config.CORSAllowedOrigins)

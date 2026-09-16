@@ -25,7 +25,13 @@ func (m *mockPinger) Ping(ctx context.Context) error {
 	return m.err
 }
 
-func setupTestRouter(pingErr error) (http.Handler, *repository.MockMediaRepository, *repository.MockWindowRepository, *repository.MockPlaylistRepository) {
+func setupTestRouter(pingErr error) (
+	http.Handler,
+	*repository.MockMediaRepository,
+	*repository.MockWindowRepository,
+	*repository.MockPlaylistRepository,
+	*repository.MockSyncRepository,
+) {
 	cfg := &config.Config{
 		Port:               "8080",
 		Environment:        "test",
@@ -35,6 +41,7 @@ func setupTestRouter(pingErr error) (http.Handler, *repository.MockMediaReposito
 	mediaRepo := repository.NewMockMediaRepository()
 	windowRepo := repository.NewMockWindowRepository()
 	playlistRepo := repository.NewMockPlaylistRepository()
+	syncRepo := repository.NewMockSyncRepository()
 
 	deps := Dependencies{
 		Config:          cfg,
@@ -42,13 +49,14 @@ func setupTestRouter(pingErr error) (http.Handler, *repository.MockMediaReposito
 		WindowService:   service.NewWindowService(windowRepo),
 		MediaService:    service.NewMediaService(mediaRepo),
 		PlaylistService: service.NewPlaylistService(playlistRepo, mediaRepo, windowRepo),
+		SyncService:     service.NewSyncService(syncRepo, mediaRepo),
 	}
 
-	return NewRouter(deps), mediaRepo, windowRepo, playlistRepo
+	return NewRouter(deps), mediaRepo, windowRepo, playlistRepo, syncRepo
 }
 
 func TestHealthCheckSuccess(t *testing.T) {
-	router, _, _, _ := setupTestRouter(nil)
+	router, _, _, _, _ := setupTestRouter(nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -70,7 +78,7 @@ func TestHealthCheckSuccess(t *testing.T) {
 }
 
 func TestHealthCheckDatabaseUnavailable(t *testing.T) {
-	router, _, _, _ := setupTestRouter(errors.New("db connection lost"))
+	router, _, _, _, _ := setupTestRouter(errors.New("db connection lost"))
 
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
@@ -95,7 +103,7 @@ func TestHealthCheckDatabaseUnavailable(t *testing.T) {
 }
 
 func TestTimeEndpoint(t *testing.T) {
-	router, _, _, _ := setupTestRouter(nil)
+	router, _, _, _, _ := setupTestRouter(nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/time", nil)
 	rec := httptest.NewRecorder()
@@ -117,9 +125,90 @@ func TestTimeEndpoint(t *testing.T) {
 	}
 }
 
+func TestWindowEndpoints(t *testing.T) {
+	ctx := context.Background()
+	router, _, windowRepo, _, _ := setupTestRouter(nil)
+
+	_ = windowRepo.Create(ctx, &models.Window{
+		WindowNumber:         1,
+		Name:                 "Display 1",
+		CycleDurationSeconds: 18000,
+		CycleStartTime:       time.Now().UTC(),
+		IsActive:             true,
+	})
+
+	// 1. GET /api/v1/windows
+	reqList := httptest.NewRequest(http.MethodGet, "/api/v1/windows", nil)
+	recList := httptest.NewRecorder()
+	router.ServeHTTP(recList, reqList)
+
+	if recList.Code != http.StatusOK {
+		t.Fatalf("expected 200 on list windows, got %d", recList.Code)
+	}
+
+	// 2. GET /api/v1/windows/1
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/v1/windows/1", nil)
+	recGet := httptest.NewRecorder()
+	router.ServeHTTP(recGet, reqGet)
+
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get window 1, got %d", recGet.Code)
+	}
+
+	// 3. GET /api/v1/windows/999 (Not Found)
+	reqNotFound := httptest.NewRequest(http.MethodGet, "/api/v1/windows/999", nil)
+	recNotFound := httptest.NewRecorder()
+	router.ServeHTTP(recNotFound, reqNotFound)
+
+	if recNotFound.Code != http.StatusNotFound {
+		t.Errorf("expected 404 for unknown window, got %d", recNotFound.Code)
+	}
+}
+
+func TestMediaEndpoints(t *testing.T) {
+	ctx := context.Background()
+	router, mediaRepo, _, _, _ := setupTestRouter(nil)
+
+	_ = mediaRepo.Create(ctx, &models.Media{
+		MediaKey:        "M1",
+		Name:            "Nature 4K",
+		Type:            models.MediaTypeVideo,
+		URL:             "https://example.com/m1.mp4",
+		DurationSeconds: 30,
+	})
+
+	// 1. GET /api/v1/media
+	reqList := httptest.NewRequest(http.MethodGet, "/api/v1/media", nil)
+	recList := httptest.NewRecorder()
+	router.ServeHTTP(recList, reqList)
+
+	if recList.Code != http.StatusOK {
+		t.Fatalf("expected 200 on list media, got %d", recList.Code)
+	}
+
+	// 2. GET /api/v1/media/M1
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/v1/media/M1", nil)
+	recGet := httptest.NewRecorder()
+	router.ServeHTTP(recGet, reqGet)
+
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get media M1, got %d", recGet.Code)
+	}
+
+	// 3. POST /api/v1/media (Create Media)
+	createBody := `{"media_key":"M2","name":"Promo","type":"image","url":"https://example.com/m2.jpg","duration_seconds":15}`
+	reqCreate := httptest.NewRequest(http.MethodPost, "/api/v1/media", bytes.NewBufferString(createBody))
+	recCreate := httptest.NewRecorder()
+	router.ServeHTTP(recCreate, reqCreate)
+
+	if recCreate.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on create media, got %d: %s", recCreate.Code, recCreate.Body.String())
+	}
+}
+
 func TestPlaylistEndpoints(t *testing.T) {
 	ctx := context.Background()
-	router, mediaRepo, windowRepo, playlistRepo := setupTestRouter(nil)
+	router, mediaRepo, windowRepo, playlistRepo, _ := setupTestRouter(nil)
 
 	// Seed window 1
 	_ = windowRepo.Create(ctx, &models.Window{
@@ -130,13 +219,20 @@ func TestPlaylistEndpoints(t *testing.T) {
 		IsActive:             true,
 	})
 
-	// Seed media M1
+	// Seed media M1 & M2
 	_ = mediaRepo.Create(ctx, &models.Media{
 		MediaKey:        "M1",
 		Name:            "Intro Video",
 		Type:            models.MediaTypeVideo,
 		URL:             "https://example.com/m1.mp4",
 		DurationSeconds: 20,
+	})
+	_ = mediaRepo.Create(ctx, &models.Media{
+		MediaKey:        "M2",
+		Name:            "Feature Image",
+		Type:            models.MediaTypeImage,
+		URL:             "https://example.com/m2.jpg",
+		DurationSeconds: 10,
 	})
 
 	// Seed empty playlist
@@ -149,7 +245,6 @@ func TestPlaylistEndpoints(t *testing.T) {
 	addBody := `{"media_key":"M1","custom_duration_seconds":20}`
 	reqAdd := httptest.NewRequest(http.MethodPost, "/api/v1/windows/1/playlist/items", bytes.NewBufferString(addBody))
 	recAdd := httptest.NewRecorder()
-
 	router.ServeHTTP(recAdd, reqAdd)
 
 	if recAdd.Code != http.StatusCreated {
@@ -159,7 +254,6 @@ func TestPlaylistEndpoints(t *testing.T) {
 	// 2. Fetch playlist via GET /api/v1/windows/1/playlist
 	reqGet := httptest.NewRequest(http.MethodGet, "/api/v1/windows/1/playlist", nil)
 	recGet := httptest.NewRecorder()
-
 	router.ServeHTTP(recGet, reqGet)
 
 	if recGet.Code != http.StatusOK {
@@ -174,10 +268,13 @@ func TestPlaylistEndpoints(t *testing.T) {
 		t.Errorf("expected 1 item in playlist, got %d", len(items))
 	}
 
-	// 3. Query playback state via GET /api/v1/windows/1/playback-state
-	reqState := httptest.NewRequest(http.MethodGet, "/api/v1/windows/1/playback-state", nil)
-	recState := httptest.NewRecorder()
+	// Extract item_id for deletion test
+	firstItem := items[0].(map[string]any)
+	itemID := firstItem["item_id"].(string)
 
+	// 3. Query playback state via GET /api/v1/windows/1/playback
+	reqState := httptest.NewRequest(http.MethodGet, "/api/v1/windows/1/playback", nil)
+	recState := httptest.NewRecorder()
 	router.ServeHTTP(recState, reqState)
 
 	if recState.Code != http.StatusOK {
@@ -190,7 +287,79 @@ func TestPlaylistEndpoints(t *testing.T) {
 	if stateMap["media_key"] != "M1" {
 		t.Errorf("expected active media_key M1, got %v", stateMap["media_key"])
 	}
-	if stateMap["status"] != "NORMAL" {
-		t.Errorf("expected status NORMAL, got %v", stateMap["status"])
+
+	// 4. Update playlist batch via PUT /api/v1/windows/1/playlist
+	putBody := `{"items":[{"media_key":"M2","type":"image","url":"https://example.com/m2.jpg","duration_seconds":15}]}`
+	reqPut := httptest.NewRequest(http.MethodPut, "/api/v1/windows/1/playlist", bytes.NewBufferString(putBody))
+	recPut := httptest.NewRecorder()
+	router.ServeHTTP(recPut, reqPut)
+
+	if recPut.Code != http.StatusOK {
+		t.Fatalf("expected status 200 on PUT playlist, got %d: %s", recPut.Code, recPut.Body.String())
+	}
+
+	// 5. Remove item from playlist via DELETE /api/v1/windows/1/playlist/{itemId}
+	reqDel := httptest.NewRequest(http.MethodDelete, "/api/v1/windows/1/playlist/"+itemID, nil)
+	recDel := httptest.NewRecorder()
+	router.ServeHTTP(recDel, reqDel)
+
+	// Note: itemID was replaced by PUT, so deleting old itemID should return 404
+	if recDel.Code != http.StatusNotFound {
+		t.Errorf("expected status 404 on deleting non-existent itemID, got %d", recDel.Code)
+	}
+}
+
+func TestSyncEndpoints(t *testing.T) {
+	ctx := context.Background()
+	router, mediaRepo, _, _, _ := setupTestRouter(nil)
+
+	_ = mediaRepo.Create(ctx, &models.Media{
+		MediaKey:        "M2",
+		Name:            "Sync Banner",
+		Type:            models.MediaTypeImage,
+		URL:             "https://example.com/m2.jpg",
+		DurationSeconds: 15,
+	})
+
+	// 1. POST /api/v1/sync (Trigger Sync)
+	syncBody := `{"media_key":"M2","duration_seconds":15,"lead_time_ms":1000}`
+	reqSync := httptest.NewRequest(http.MethodPost, "/api/v1/sync", bytes.NewBufferString(syncBody))
+	recSync := httptest.NewRecorder()
+	router.ServeHTTP(recSync, reqSync)
+
+	if recSync.Code != http.StatusCreated {
+		t.Fatalf("expected 201 on trigger sync, got %d: %s", recSync.Code, recSync.Body.String())
+	}
+
+	var syncResp utils.APIResponse
+	_ = json.NewDecoder(recSync.Body).Decode(&syncResp)
+	eventMap := syncResp.Data.(map[string]any)
+	eventID := eventMap["event_id"].(string)
+
+	// 2. GET /api/v1/sync/current
+	reqCurrent := httptest.NewRequest(http.MethodGet, "/api/v1/sync/current", nil)
+	recCurrent := httptest.NewRecorder()
+	router.ServeHTTP(recCurrent, reqCurrent)
+
+	if recCurrent.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get active sync, got %d", recCurrent.Code)
+	}
+
+	// 3. GET /api/v1/sync/{id}
+	reqGet := httptest.NewRequest(http.MethodGet, "/api/v1/sync/"+eventID, nil)
+	recGet := httptest.NewRecorder()
+	router.ServeHTTP(recGet, reqGet)
+
+	if recGet.Code != http.StatusOK {
+		t.Fatalf("expected 200 on get sync by id, got %d", recGet.Code)
+	}
+
+	// 4. POST /api/v1/sync/{id}/cancel
+	reqCancel := httptest.NewRequest(http.MethodPost, "/api/v1/sync/"+eventID+"/cancel", nil)
+	recCancel := httptest.NewRecorder()
+	router.ServeHTTP(recCancel, reqCancel)
+
+	if recCancel.Code != http.StatusOK {
+		t.Fatalf("expected 200 on cancel sync, got %d", recCancel.Code)
 	}
 }

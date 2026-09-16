@@ -32,29 +32,29 @@ func NewPlaylistService(
 	}
 }
 
-func (s *defaultPlaylistService) GetPlaylist(ctx context.Context, windowNumber int) (*models.Playlist, error) {
-	p, err := s.playlistRepo.FindByWindowNumber(ctx, windowNumber)
+func (s *defaultPlaylistService) GetPlaylist(ctx context.Context, idOrNumber string) (*models.Playlist, error) {
+	p, err := s.playlistRepo.FindByWindowIdOrNumber(ctx, idOrNumber)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrPlaylistNotFound
 		}
-		return nil, fmt.Errorf("failed to retrieve playlist for window %d: %w", windowNumber, err)
+		return nil, fmt.Errorf("failed to retrieve playlist for window %s: %w", idOrNumber, err)
 	}
 	return p, nil
 }
 
-func (s *defaultPlaylistService) AddPlaylistItem(ctx context.Context, windowNumber int, mediaKey string, customDuration int) (*models.Playlist, error) {
+func (s *defaultPlaylistService) AddPlaylistItem(ctx context.Context, idOrNumber string, mediaKey string, customDuration int) (*models.Playlist, error) {
 	// Verify window exists
-	_, err := s.windowRepo.FindByNumber(ctx, windowNumber)
+	window, err := s.windowRepo.FindByIdOrNumber(ctx, idOrNumber)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrWindowNotFound
 		}
-		return nil, fmt.Errorf("failed to verify window %d: %w", windowNumber, err)
+		return nil, fmt.Errorf("failed to verify window %s: %w", idOrNumber, err)
 	}
 
 	// Verify media asset exists
-	media, err := s.mediaRepo.FindByKey(ctx, mediaKey)
+	media, err := s.mediaRepo.FindByIdOrKey(ctx, mediaKey)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrMediaNotFound
@@ -62,9 +62,17 @@ func (s *defaultPlaylistService) AddPlaylistItem(ctx context.Context, windowNumb
 		return nil, fmt.Errorf("failed to verify media %s: %w", mediaKey, err)
 	}
 
+	if customDuration < 0 {
+		return nil, fmt.Errorf("%w: custom duration cannot be negative", ErrInvalidInput)
+	}
+
 	duration := media.DurationSeconds
 	if customDuration > 0 {
 		duration = customDuration
+	}
+
+	if duration <= 0 {
+		return nil, fmt.Errorf("%w: item duration must be strictly positive", ErrInvalidInput)
 	}
 
 	item := models.PlaylistItem{
@@ -75,51 +83,83 @@ func (s *defaultPlaylistService) AddPlaylistItem(ctx context.Context, windowNumb
 		DurationSeconds: duration,
 	}
 
-	updatedPlaylist, err := s.playlistRepo.AppendItem(ctx, windowNumber, item)
+	updatedPlaylist, err := s.playlistRepo.AppendItem(ctx, window.WindowNumber, item)
 	if err != nil {
-		return nil, fmt.Errorf("failed to append item to window %d: %w", windowNumber, err)
-	}
-
-	return updatedPlaylist, nil
-}
-
-func (s *defaultPlaylistService) RemovePlaylistItem(ctx context.Context, windowNumber int, itemID string) (*models.Playlist, error) {
-	updatedPlaylist, err := s.playlistRepo.RemoveItem(ctx, windowNumber, itemID)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrPlaylistNotFound
+		if errors.Is(err, repository.ErrConflict) {
+			return nil, ErrConflict
 		}
-		return nil, fmt.Errorf("failed to remove item %s from window %d: %w", itemID, windowNumber, err)
+		return nil, fmt.Errorf("failed to append item to window %d: %w", window.WindowNumber, err)
 	}
+
 	return updatedPlaylist, nil
 }
 
-func (s *defaultPlaylistService) UpdatePlaylist(ctx context.Context, windowNumber int, items []models.PlaylistItem) (*models.Playlist, error) {
-	updatedPlaylist, err := s.playlistRepo.UpdateItems(ctx, windowNumber, items)
-	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			return nil, ErrPlaylistNotFound
-		}
-		return nil, fmt.Errorf("failed to update playlist for window %d: %w", windowNumber, err)
-	}
-	return updatedPlaylist, nil
-}
-
-func (s *defaultPlaylistService) GetPlaybackState(ctx context.Context, windowNumber int, queryTime time.Time) (*timeline.PlaybackState, error) {
-	window, err := s.windowRepo.FindByNumber(ctx, windowNumber)
+func (s *defaultPlaylistService) RemovePlaylistItem(ctx context.Context, idOrNumber string, itemID string) (*models.Playlist, error) {
+	window, err := s.windowRepo.FindByIdOrNumber(ctx, idOrNumber)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrWindowNotFound
 		}
-		return nil, fmt.Errorf("failed to retrieve window %d: %w", windowNumber, err)
+		return nil, fmt.Errorf("failed to verify window %s: %w", idOrNumber, err)
 	}
 
-	playlist, err := s.playlistRepo.FindByWindowNumber(ctx, windowNumber)
+	updatedPlaylist, err := s.playlistRepo.RemoveItem(ctx, window.WindowNumber, itemID)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrPlaylistNotFound
 		}
-		return nil, fmt.Errorf("failed to retrieve playlist for window %d: %w", windowNumber, err)
+		return nil, fmt.Errorf("failed to remove item %s from window %d: %w", itemID, window.WindowNumber, err)
+	}
+	return updatedPlaylist, nil
+}
+
+func (s *defaultPlaylistService) UpdatePlaylist(ctx context.Context, idOrNumber string, items []models.PlaylistItem) (*models.Playlist, error) {
+	window, err := s.windowRepo.FindByIdOrNumber(ctx, idOrNumber)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrWindowNotFound
+		}
+		return nil, fmt.Errorf("failed to verify window %s: %w", idOrNumber, err)
+	}
+
+	// Validate all items in updated playlist
+	for i, it := range items {
+		if it.DurationSeconds <= 0 && it.DurationMs <= 0 {
+			return nil, fmt.Errorf("%w: item at index %d has non-positive duration", ErrInvalidInput, i)
+		}
+		if it.MediaKey == "" {
+			return nil, fmt.Errorf("%w: item at index %d has empty media_key", ErrInvalidInput, i)
+		}
+		if it.ItemID == "" {
+			items[i].ItemID = uuid.New().String()
+		}
+	}
+
+	updatedPlaylist, err := s.playlistRepo.UpdateItems(ctx, window.WindowNumber, items)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrPlaylistNotFound
+		}
+		return nil, fmt.Errorf("failed to update playlist for window %d: %w", window.WindowNumber, err)
+	}
+	return updatedPlaylist, nil
+}
+
+func (s *defaultPlaylistService) GetPlaybackState(ctx context.Context, idOrNumber string, queryTime time.Time) (*timeline.PlaybackState, error) {
+	window, err := s.windowRepo.FindByIdOrNumber(ctx, idOrNumber)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrWindowNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve window %s: %w", idOrNumber, err)
+	}
+
+	playlist, err := s.playlistRepo.FindByWindowNumber(ctx, window.WindowNumber)
+	if err != nil {
+		if errors.Is(err, repository.ErrNotFound) {
+			return nil, ErrPlaylistNotFound
+		}
+		return nil, fmt.Errorf("failed to retrieve playlist for window %d: %w", window.WindowNumber, err)
 	}
 
 	return s.timelineEngine.Calculate(window, playlist, queryTime)

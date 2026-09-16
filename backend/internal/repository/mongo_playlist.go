@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/eva-bharat/media-sequencer/backend/internal/models"
@@ -34,33 +35,69 @@ func (r *MongoPlaylistRepository) FindByWindowNumber(ctx context.Context, window
 	return &p, nil
 }
 
+func (r *MongoPlaylistRepository) FindByWindowIdOrNumber(ctx context.Context, idOrNumber string) (*models.Playlist, error) {
+	var filter bson.M
+	if num, err := strconv.Atoi(idOrNumber); err == nil && num > 0 {
+		filter = bson.M{"window_number": num}
+	} else if oid, err := bson.ObjectIDFromHex(idOrNumber); err == nil {
+		filter = bson.M{
+			"$or": []bson.M{
+				{"window_id": oid},
+				{"_id": oid},
+			},
+		}
+	} else {
+		return nil, ErrNotFound
+	}
+
+	var p models.Playlist
+	err := r.collection.FindOne(ctx, filter).Decode(&p)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("failed to find playlist for %s: %w", idOrNumber, err)
+	}
+	return &p, nil
+}
+
 func (r *MongoPlaylistRepository) AppendItem(ctx context.Context, windowNumber int, item models.PlaylistItem) (*models.Playlist, error) {
-	// Retrieve existing playlist to determine sequence order and new total
-	p, err := r.FindByWindowNumber(ctx, windowNumber)
-	if err != nil {
-		return nil, err
+	// Optimistic concurrency loop: retry up to 3 times on concurrent version conflict
+	for attempt := 0; attempt < 3; attempt++ {
+		p, err := r.FindByWindowNumber(ctx, windowNumber)
+		if err != nil {
+			return nil, err
+		}
+
+		origVersion := p.Version
+		item.Order = len(p.Items) + 1
+		p.Items = append(p.Items, item)
+		p.Recalculate()
+
+		filter := bson.M{
+			"window_number": windowNumber,
+			"version":       origVersion, // Optimistic concurrency check
+		}
+		update := bson.M{
+			"$set": bson.M{
+				"items":                           p.Items,
+				"total_sequence_duration_seconds": p.TotalSequenceDurationSeconds,
+				"version":                         p.Version,
+				"updated_at":                      p.UpdatedAt,
+			},
+		}
+
+		res, err := r.collection.UpdateOne(ctx, filter, update)
+		if err != nil {
+			return nil, fmt.Errorf("failed to append item to playlist for window %d: %w", windowNumber, err)
+		}
+		if res.MatchedCount > 0 {
+			return p, nil
+		}
+		// Version conflict occurred, loop again with refreshed document
 	}
 
-	item.Order = len(p.Items) + 1
-	p.Items = append(p.Items, item)
-	p.Recalculate()
-
-	filter := bson.M{"window_number": windowNumber}
-	update := bson.M{
-		"$set": bson.M{
-			"items":                           p.Items,
-			"total_sequence_duration_seconds": p.TotalSequenceDurationSeconds,
-			"version":                         p.Version,
-			"updated_at":                      p.UpdatedAt,
-		},
-	}
-
-	_, err = r.collection.UpdateOne(ctx, filter, update)
-	if err != nil {
-		return nil, fmt.Errorf("failed to append item to playlist for window %d: %w", windowNumber, err)
-	}
-
-	return p, nil
+	return nil, ErrConflict
 }
 
 func (r *MongoPlaylistRepository) UpdateItems(ctx context.Context, windowNumber int, items []models.PlaylistItem) (*models.Playlist, error) {

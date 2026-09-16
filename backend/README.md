@@ -11,7 +11,7 @@ Enterprise backend for the **Multi-Window Media Sequencer with Synchronized Play
 | **Go HTTP Architecture** | **IMPLEMENTED** | Standard Go 1.22+ routing, middleware stack, structured logging, graceful shutdown. |
 | **MongoDB Integration** | **IMPLEMENTED** | Official driver (`go.mongodb.org/mongo-driver/v2`), connection pooling, ping checks, index creation. |
 | **Domain Models & Repositories** | **IMPLEMENTED** | `Media`, `Window`, `Playlist`, `PlaylistItem`, and `SyncEvent` models with atomic repository operations. |
-| **REST API Foundation** | **IMPLEMENTED** | `/health`, `/api/v1/health`, `/api/v1/time`, `/api/v1/media`, `/api/v1/windows`, `/api/v1/windows/{id}/playlist`. |
+| **REST API Foundation** | **IMPLEMENTED** | Complete production REST API: `/health`, `/api/v1/time`, `/api/v1/windows`, `/api/v1/media`, `/api/v1/windows/{id}/playlist`, `/api/v1/windows/{id}/playback`, `/api/v1/sync` ([API reference](docs/api_reference.md)). |
 | **Middleware & Error Handling** | **IMPLEMENTED** | Strict CORS, JSON envelopes, structured request logging, panic recovery. |
 | **Seed Data System** | **IMPLEMENTED** | Candidate-created baseline dataset populating 3 windows and 8 media assets. |
 | **Testing Suite** | **IMPLEMENTED** | Pure unit tests for config, models, repositories, services, handlers, middleware, seeds, and timeline engine. |

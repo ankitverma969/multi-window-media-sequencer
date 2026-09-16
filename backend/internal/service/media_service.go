@@ -23,13 +23,13 @@ func (s *defaultMediaService) ListMedia(ctx context.Context) ([]models.Media, er
 	return s.mediaRepo.ListAll(ctx)
 }
 
-func (s *defaultMediaService) GetMedia(ctx context.Context, mediaKey string) (*models.Media, error) {
-	m, err := s.mediaRepo.FindByKey(ctx, mediaKey)
+func (s *defaultMediaService) GetMedia(ctx context.Context, idOrKey string) (*models.Media, error) {
+	m, err := s.mediaRepo.FindByIdOrKey(ctx, idOrKey)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			return nil, ErrMediaNotFound
 		}
-		return nil, fmt.Errorf("failed to retrieve media %s: %w", mediaKey, err)
+		return nil, fmt.Errorf("failed to retrieve media %s: %w", idOrKey, err)
 	}
 	return m, nil
 }
