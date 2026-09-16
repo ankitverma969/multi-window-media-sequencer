@@ -6,6 +6,7 @@ import (
 	"github.com/eva-bharat/media-sequencer/backend/internal/config"
 	"github.com/eva-bharat/media-sequencer/backend/internal/middleware"
 	"github.com/eva-bharat/media-sequencer/backend/internal/service"
+	ws "github.com/eva-bharat/media-sequencer/backend/internal/websocket"
 )
 
 type Dependencies struct {
@@ -15,6 +16,7 @@ type Dependencies struct {
 	MediaService    service.MediaService
 	PlaylistService service.PlaylistService
 	SyncService     service.SyncService
+	WSHub           ws.HubInterface
 }
 
 // NewRouter constructs and configures the HTTP multiplexer and middleware chain.
@@ -27,6 +29,13 @@ func NewRouter(deps Dependencies) http.Handler {
 	windowHandler := NewWindowHandler(deps.WindowService)
 	playlistHandler := NewPlaylistHandler(deps.PlaylistService)
 	syncHandler := NewSyncHandler(deps.SyncService)
+
+	// WebSocket endpoint
+	if deps.WSHub != nil {
+		wsHandler := NewWSHandler(deps.WSHub, deps.WindowService, deps.Config.CORSAllowedOrigins)
+		mux.HandleFunc("GET /ws", wsHandler.HandleWS)
+		mux.HandleFunc("GET /api/v1/ws", wsHandler.HandleWS)
+	}
 
 	// Health check endpoints
 	mux.HandleFunc("GET /health", healthHandler.HealthCheck)

@@ -22,7 +22,9 @@ func NewSyncHandler(syncService service.SyncService) *SyncHandler {
 
 type TriggerSyncRequest struct {
 	MediaKey        string `json:"media_key"`
+	MediaID         string `json:"media_id"`
 	DurationSeconds int    `json:"duration_seconds"`
+	Duration        int    `json:"duration"`
 	LeadTimeMs      int    `json:"lead_time_ms"`
 	TriggeredBy     string `json:"triggered_by"`
 }
@@ -34,20 +36,28 @@ func (h *SyncHandler) TriggerSync(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if strings.TrimSpace(req.MediaKey) == "" {
-		utils.WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "media_key is required")
+	mediaKey := strings.TrimSpace(req.MediaKey)
+	if mediaKey == "" {
+		mediaKey = strings.TrimSpace(req.MediaID)
+	}
+	if mediaKey == "" {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "media_key or media_id is required")
 		return
 	}
 
-	if req.DurationSeconds <= 0 {
+	duration := req.DurationSeconds
+	if duration <= 0 {
+		duration = req.Duration
+	}
+	if duration <= 0 {
 		utils.WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "duration_seconds must be positive")
 		return
 	}
 
 	event, err := h.syncService.TriggerSync(
 		r.Context(),
-		req.MediaKey,
-		req.DurationSeconds,
+		mediaKey,
+		duration,
 		req.LeadTimeMs,
 		req.TriggeredBy,
 	)

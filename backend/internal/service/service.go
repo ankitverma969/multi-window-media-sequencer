@@ -36,6 +36,7 @@ type PlaylistService interface {
 	RemovePlaylistItem(ctx context.Context, idOrNumber string, itemID string) (*models.Playlist, error)
 	UpdatePlaylist(ctx context.Context, idOrNumber string, items []models.PlaylistItem) (*models.Playlist, error)
 	GetPlaybackState(ctx context.Context, idOrNumber string, queryTime time.Time) (*timeline.PlaybackState, error)
+	SetUpdateListener(fn func(windowNumber int, playlist *models.Playlist))
 }
 
 type SyncService interface {

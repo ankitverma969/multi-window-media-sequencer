@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/eva-bharat/media-sequencer/backend/internal/models"
@@ -17,6 +18,8 @@ type defaultPlaylistService struct {
 	mediaRepo      repository.MediaRepository
 	windowRepo     repository.WindowRepository
 	timelineEngine *timeline.Engine
+	mu             sync.RWMutex
+	onUpdate       func(windowNumber int, playlist *models.Playlist)
 }
 
 func NewPlaylistService(
@@ -29,6 +32,21 @@ func NewPlaylistService(
 		mediaRepo:      mediaRepo,
 		windowRepo:     windowRepo,
 		timelineEngine: timeline.NewEngine(),
+	}
+}
+
+func (s *defaultPlaylistService) SetUpdateListener(fn func(windowNumber int, playlist *models.Playlist)) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.onUpdate = fn
+}
+
+func (s *defaultPlaylistService) notifyUpdate(windowNumber int, playlist *models.Playlist) {
+	s.mu.RLock()
+	fn := s.onUpdate
+	s.mu.RUnlock()
+	if fn != nil {
+		go fn(windowNumber, playlist)
 	}
 }
 
@@ -91,6 +109,7 @@ func (s *defaultPlaylistService) AddPlaylistItem(ctx context.Context, idOrNumber
 		return nil, fmt.Errorf("failed to append item to window %d: %w", window.WindowNumber, err)
 	}
 
+	s.notifyUpdate(window.WindowNumber, updatedPlaylist)
 	return updatedPlaylist, nil
 }
 
@@ -110,6 +129,8 @@ func (s *defaultPlaylistService) RemovePlaylistItem(ctx context.Context, idOrNum
 		}
 		return nil, fmt.Errorf("failed to remove item %s from window %d: %w", itemID, window.WindowNumber, err)
 	}
+
+	s.notifyUpdate(window.WindowNumber, updatedPlaylist)
 	return updatedPlaylist, nil
 }
 
@@ -142,6 +163,8 @@ func (s *defaultPlaylistService) UpdatePlaylist(ctx context.Context, idOrNumber 
 		}
 		return nil, fmt.Errorf("failed to update playlist for window %d: %w", window.WindowNumber, err)
 	}
+
+	s.notifyUpdate(window.WindowNumber, updatedPlaylist)
 	return updatedPlaylist, nil
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/eva-bharat/media-sequencer/backend/internal/handlers"
 	"github.com/eva-bharat/media-sequencer/backend/internal/repository"
 	"github.com/eva-bharat/media-sequencer/backend/internal/service"
+	"github.com/eva-bharat/media-sequencer/backend/internal/websocket"
 	"github.com/eva-bharat/media-sequencer/backend/seeds"
 )
 
@@ -65,20 +66,27 @@ func main() {
 		}
 	}
 
-	// 7. Initialize Services
+	// 7. Initialize WebSocket Hub
+	wsHub := websocket.NewHub()
+
+	// 8. Initialize Services & Authoritative Sync Coordinator
 	mediaService := service.NewMediaService(mediaRepo)
 	windowService := service.NewWindowService(windowRepo)
 	playlistService := service.NewPlaylistService(playlistRepo, mediaRepo, windowRepo)
-	syncService := service.NewSyncService(syncRepo, mediaRepo)
+	syncCoordinator := service.NewSyncCoordinator(syncRepo, mediaRepo, windowRepo, playlistRepo, playlistService, wsHub)
 
-	// 8. Build HTTP Router & Middleware Stack
+	// Recover any in-flight active sync from MongoDB (server restart resilience)
+	syncCoordinator.RecoverActiveSyncOnStartup(initCtx)
+
+	// 9. Build HTTP Router & Middleware Stack
 	router := handlers.NewRouter(handlers.Dependencies{
 		Config:          cfg,
 		Pinger:          db,
 		WindowService:   windowService,
 		MediaService:    mediaService,
 		PlaylistService: playlistService,
-		SyncService:     syncService,
+		SyncService:     syncCoordinator,
+		WSHub:           wsHub,
 	})
 
 	// 9. Configure HTTP Server
@@ -125,7 +133,10 @@ func main() {
 			slog.Info("HTTP server stopped cleanly")
 		}
 
-		// 2. Disconnect MongoDB client pool
+		// 2. Terminate active WebSocket connections cleanly
+		wsHub.Shutdown()
+
+		// 3. Disconnect MongoDB client pool
 		if err := db.Close(shutdownCtx); err != nil {
 			slog.Error("MongoDB disconnect error", "error", err)
 		} else {

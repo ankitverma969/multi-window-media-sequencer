@@ -24,7 +24,9 @@ func NewPlaylistHandler(playlistService service.PlaylistService) *PlaylistHandle
 
 type AddItemRequest struct {
 	MediaKey              string `json:"media_key"`
+	MediaID               string `json:"media_id"`
 	CustomDurationSeconds int    `json:"custom_duration_seconds"`
+	Duration              int    `json:"duration"`
 }
 
 type UpdatePlaylistRequest struct {
@@ -76,12 +78,21 @@ func (h *PlaylistHandler) AddPlaylistItem(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if strings.TrimSpace(req.MediaKey) == "" {
-		utils.WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "media_key is required")
+	mediaKey := strings.TrimSpace(req.MediaKey)
+	if mediaKey == "" {
+		mediaKey = strings.TrimSpace(req.MediaID)
+	}
+	if mediaKey == "" {
+		utils.WriteError(w, http.StatusBadRequest, "INVALID_INPUT", "media_key or media_id is required")
 		return
 	}
 
-	updated, err := h.playlistService.AddPlaylistItem(r.Context(), idStr, req.MediaKey, req.CustomDurationSeconds)
+	customDuration := req.CustomDurationSeconds
+	if customDuration <= 0 {
+		customDuration = req.Duration
+	}
+
+	updated, err := h.playlistService.AddPlaylistItem(r.Context(), idStr, mediaKey, customDuration)
 	if err != nil {
 		if errors.Is(err, service.ErrWindowNotFound) {
 			utils.WriteError(w, http.StatusNotFound, "WINDOW_NOT_FOUND", "Specified window does not exist")
