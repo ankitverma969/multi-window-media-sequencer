@@ -1,11 +1,11 @@
 import React, { useState, useEffect } from 'react'
 import { api } from '../api/client'
-import { evaluateSyncTimeline, formatTime } from '../playback/timeSync'
+import { evaluateSyncTimeline } from '../playback/timeSync'
 
 export function SyncControls({ mediaList = [], onSyncTriggered }) {
   const [selectedMediaKey, setSelectedMediaKey] = useState('')
   const [durationSeconds, setDurationSeconds] = useState(15)
-  const [leadTimeMs, setLeadTimeMs] = useState(1000)
+  const leadTimeMs = 1000
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [currentSync, setCurrentSync] = useState(null)
   const [statusMessage, setStatusMessage] = useState(null)

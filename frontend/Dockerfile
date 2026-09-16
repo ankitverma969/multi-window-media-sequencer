@@ -1,23 +1,26 @@
-# Build stage
-FROM node:20-alpine AS build
+# ==============================================================================
+# Production Dockerfile for React Frontend (EVA Bharat Media Sequencer)
+# Uses Node.js to build and serve the production bundle via Vite Preview.
+# Completely eliminates any Nginx dependency.
+# ==============================================================================
+FROM node:20-alpine
 
 WORKDIR /app
 
+# Cache dependencies
 COPY package*.json ./
 RUN npm ci
 
+# Copy application source code
 COPY . .
+
+# Build optimized production bundle to /app/dist
 RUN npm run build
 
-# Production serve stage
-FROM nginx:alpine
-
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
+EXPOSE 5173
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=5s --retries=3 \
-    CMD wget -q --spider http://localhost:80/ || exit 1
+    CMD wget -q --spider http://localhost:5173/ || exit 1
 
-CMD ["nginx", "-g", "daemon off;"]
+# Serve production assets directly via Vite Preview
+CMD ["npm", "run", "preview", "--", "--host", "0.0.0.0", "--port", "5173"]

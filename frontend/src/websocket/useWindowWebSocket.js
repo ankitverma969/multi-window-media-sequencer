@@ -7,11 +7,9 @@ function getWsBaseUrl() {
     return import.meta.env.VITE_WS_URL
   }
   if (typeof window !== 'undefined' && window.location) {
-    if (window.location.port === '5173') {
-      return 'ws://localhost:8080'
-    }
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    return `${protocol}//${window.location.host}`
+    const hostname = window.location.hostname || 'localhost'
+    return `${protocol}//${hostname}:8080`
   }
   return 'ws://localhost:8080'
 }

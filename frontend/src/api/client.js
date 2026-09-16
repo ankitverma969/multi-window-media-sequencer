@@ -7,11 +7,9 @@ function getApiBaseUrl() {
     return import.meta.env.VITE_API_URL
   }
   if (typeof window !== 'undefined' && window.location) {
-    if (window.location.port === '5173') {
-      return 'http://localhost:8080'
-    }
-    // Behind reverse proxy (Nginx in Docker / Production)
-    return ''
+    const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:'
+    const hostname = window.location.hostname || 'localhost'
+    return `${protocol}//${hostname}:8080`
   }
   return 'http://localhost:8080'
 }

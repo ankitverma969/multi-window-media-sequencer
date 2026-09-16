@@ -5,8 +5,6 @@ services:
     image: mongo:7.0
     container_name: media_sequencer_mongo
     restart: unless-stopped
-    expose:
-      - "27017"
     ports:
       - "127.0.0.1:27017:27017" # Bound to localhost only to prevent public internet exposure
     volumes:
@@ -31,7 +29,7 @@ services:
       - ENVIRONMENT=production
       - MONGODB_URI=mongodb://mongo:27017
       - MONGODB_DATABASE=media_sequencer
-      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://localhost:80,http://localhost
+      - CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173
       - SYNC_LEAD_TIME_MS=1000
       - SEED_ON_STARTUP=true
     depends_on:
@@ -51,12 +49,15 @@ services:
     container_name: media_sequencer_frontend
     restart: unless-stopped
     ports:
-      - "5173:80"
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8080
+      - VITE_WS_URL=ws://localhost:8080
     depends_on:
       backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:5173/"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -65,5 +66,3 @@ services:
 volumes:
   mongo_data:
     driver: local
-
-

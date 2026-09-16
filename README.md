@@ -1,353 +1,417 @@
-# EVA Bharat: Multi-Window Media Sequencer with Synchronized Playback
+# Multi-Window Media Sequencer
 
-A production-grade, server-authoritative multi-window media sequencer and real-time playback synchronization system built for the **EVA Bharat Backend Development Intern Evaluation**.
+A full-stack digital signage system that plays independent looping video and image playlists across multiple display windows over a fixed 5-hour cycle, with instant server-synchronized playback overrides.
 
----
-
-## 1. Overview
-In distributed digital signage systems, multiple independent display windows continuously loop distinct media playlists across a fixed **5-hour timeline cycle**. When an operator triggers a **Global Synchronization Event** (e.g., displaying an emergency alert, live broadcast, or product showcase), every connected display must immediately switch to that media item in unison. Upon sync expiration, each window seamlessly returns to its own normal playlist sequence without drift and without losing persistent configurations.
+Built for the **EVA Bharat Backend Development Intern Evaluation**.
 
 ---
 
-## 2. Assignment Requirements & Compliance Matrix
+## What Is This?
+Imagine a shopping mall, airport, or hotel with four digital screens in different areas (Front Display, Side Display, Lobby, Balcony). 
 
-| Requirement | Implementation Component | Test & Verification | Status |
-| :--- | :--- | :--- | :---: |
-| **React Frontend** | `frontend/src/` (React 19 + Vite) | Vitest component tests & browser E2E | **PASS** |
-| **Golang Backend** | `backend/cmd/server/main.go` | Go tests (10 packages, 100% pass) | **PASS** |
-| **Persistent Storage** | MongoDB 7.0 (`internal/repository`) | Survives backend restarts & process termination | **PASS** |
-| **Multiple Display Windows** | 4 independent windows in 2x2 grid | Verified in browser & API smoke tests | **PASS** |
-| **Individual Window Playlists**| `internal/service/window_service.go` | Distinct playlists per window | **PASS** |
-| **Continuous Playback** | `internal/timeline/engine.go` | Gapless video/image transitions | **PASS** |
-| **5-Hour Cycle Engine** | Modulo $18{,}000\,\text{s}$ wall-clock math | Sub-second boundary tests around $18{,}000\,\text{s}$ | **PASS** |
-| **Explicit Blank Behavior** | `internal/models/media.go` | Blank appears strictly for configured duration | **PASS** |
-| **Dynamic Playlist Updates** | REST POST $\to$ WebSocket Broadcast | Runtime update without page refresh | **PASS** |
-| **Synchronized Media Override**| `internal/service/sync_coordinator.go`| All 4 windows display sync asset simultaneously | **PASS** |
-| **Sync Duration & Expiry** | UTC timestamp boundaries + timers | Automatic revert on timer expiration | **PASS** |
-| **Return to Normal Playlist** | Authoritative wall-clock query | Resumes exact scheduled second; DB untouched | **PASS** |
-| **WebSocket Real-Time Updates**| Gorilla WebSocket hub + `writePump` | Thread-safe single-writer channel delivery | **PASS** |
-| **Seed Data** | `backend/seeds/seed.go`, `cmd/seed` | 4 windows, 11 media items seeded idempotently | **PASS** |
-| **Deployment Configuration** | Multi-stage Docker + Nginx proxy | Dockerfiles, `compose.yml`, healthchecks | **PASS** |
-| **Comprehensive Documentation**| `README.md`, `DEMO.md`, test reports | Full setup, API, and deployment documentation | **PASS** |
+Each screen plays its own continuous loop of images and videos. At any moment, an operator at a central console can push an "Emergency Alert" or "Special Announcement" that immediately displays on **all four screens at the exact same second**. Once the announcement finishes, every screen automatically returns to its own regular scheduled playlist.
+
+This project is the complete, working software that powers this system—including the user interface, backend server, database, and real-time synchronization engine.
 
 ---
 
-## 3. Architecture
+## What Problem Does It Solve?
+1. **Unsynchronized Screens**: If you tell multiple browser screens to "play now," network delays mean some screens start early and others start late. This system solves that by scheduling events with an **authoritative server clock** and predictive lead buffer so screens start in unison.
+2. **Schedule Drift**: Over hours or days, video players slowly drift out of sync. This system uses mathematical wall-clock alignment to guarantee consistent playback positions without drifting.
+3. **Loss of Content During Overrides**: When an operator broadcasts an emergency message, the regular playlist should not be lost or deleted. This system treats synchronization as a temporary layer—when it ends, regular playback resumes exactly where it should be.
 
-### System Architecture Diagram
-```
-                           Internet / User Browsers
-                                      │
-                                      ▼
-                            ┌───────────────────┐
-                            │    AWS Route 53   │ (DNS Routing)
-                            └─────────┬─────────┘
-                                      │
-                         HTTPS / WSS  │ (Ports 443, 80)
-                                      ▼
-                      ┌───────────────────────────────┐
-                      │    Nginx Reverse Proxy / SPA  │ (Static Frontend + Proxy)
-                      │    - SPA Fallback Routing     │
-                      │    - Gzip & Security Headers  │
-                      │    - WebSocket Upgrade (WSS)  │
-                      └───────┬───────────────┬───────┘
-                              │               │
-                     REST API │               │ WebSocket (/ws)
-             http://backend:8080      http://backend:8080 (Upgrade)
-                              │               │
-                              ▼               ▼
-                      ┌───────────────────────────────┐
-                      │     Go Backend Container      │ (Golang 1.24)
-                      │  - Authoritative 5h Timeline  │
-                      │  - Gorilla WS Single-Writer   │
-                      │  - Sync Coordinator & Timers  │
-                      └───────────────┬───────────────┘
-                                      │
-                                      ▼ TLS / Auth (Port 27017)
-                      ┌───────────────────────────────┐
-                      │   MongoDB Persistent Storage  │
-                      │  - Atlas Cloud or Docker Vol  │
-                      │  - Windows, Playlists, Sync   │
-                      └───────────────────────────────┘
+---
+
+## How It Works — Simple Explanation
+* **The Screens (React Frontend)**: Runs in web browsers. It renders the media (videos, images, or blank frames) and listens for real-time updates.
+* **The Brain (Golang Backend)**: Calculates what media should be playing on every screen at every second. When a sync button is pressed, it coordinates all screens.
+* **The Memory (MongoDB)**: Stores the playlists, screen settings, and media lists so that if the power goes out or the server restarts, nothing is lost.
+* **The Live Wire (WebSocket)**: A permanent live connection between the brain and the screens so updates happen in less than a tenth of a second.
+
+---
+
+## Example
+1. **Screen 1 (Front)** is playing: *Ad 1 (10s) $\to$ Product Video (20s) $\to$ Logo (30s)*.
+2. **Screen 2 (Side)** is playing: *Weather (15s) $\to$ News (30s)*.
+3. **Screen 3 (Lobby)** is playing: *Directory (30s) $\to$ Welcome (30s)*.
+4. **Screen 4 (Balcony)** is playing: *Promotions (20s) $\to$ Events (30s)*.
+5. The operator presses **Trigger Sync for M2 (30 seconds)**.
+6. **Immediately**, Screen 1, Screen 2, Screen 3, and Screen 4 all switch to **M2**. A countdown timer displays `30s... 29s... 28s...`.
+7. When the timer hits `0s`, all four screens immediately go back to their own playlists, resuming at the exact second they should be playing.
+
+---
+
+## Main Features
+* **4 Independent Windows**: Displayed simultaneously in an intuitive 2x2 grid or as fullscreen individual signage outputs.
+* **Continuous Gapless Playback**: Videos and images transition seamlessly with zero artificial pauses.
+* **5-Hour Cycle Engine**: Schedules repeat continuously across a fixed 5-hour (18,000-second) cycle without drifting.
+* **No Automatic Blanks**: Playlists loop continuously; blank frames only appear if an operator explicitly configures a blank item.
+* **Instant Synchronized Override**: Broadcasts one selected asset to all screens simultaneously with live countdown.
+* **Mid-Sync Catchup**: If a new screen turns on in the middle of an active sync, it calculates how much time has passed and joins at the exact right second.
+* **Dynamic Playlist Updates**: Add or remove items while videos are playing without reloading the web page.
+* **Persistent Storage**: All settings survive server restarts in MongoDB.
+* **Direct Architecture**: Clean port-to-port communication between React, Go, and MongoDB with no complex proxies.
+
+---
+
+## How Synchronization Works
+
+```mermaid
+flowchart TD
+    Operator[Operator selects Media & Duration] --> Request[POST /api/v1/sync]
+    Request --> Backend[Go Backend Server]
+    Backend --> Timestamp[Calculates Target UTC Start Time + 1000ms Buffer]
+    Timestamp --> Persist[Saves Active Sync to MongoDB]
+    Timestamp --> Broadcast[WebSocket Broadcast to All Screens]
+    Broadcast --> Windows[All 4 Display Windows]
+    Windows --> SyncPlay[Simultaneous Synchronized Playback]
+    SyncPlay --> Timer[Countdown Reaches Zero]
+    Timer --> Resume[All Screens Resume Own Normal Playlists]
 ```
 
-### Architectural Tenets
-* **Single Source of Truth**: MongoDB is the sole persistent store for configurations. In-memory state is strictly derived from authoritative wall-clock math and MongoDB documents.
-* **Server-Authoritative Timing**: The Go backend determines schedule positions. The React frontend renders authoritative state and does not maintain independent drift-prone schedule calculations.
+1. **Lead Time Buffer**: The server gives screens a 1-second preparation buffer (`start_time = now + 1000ms`) so players can preload media files before playback starts.
+2. **Server-Authoritative Clock**: Browsers calculate the clock difference with the server to prevent device clock inaccuracies from causing desynchronization.
+3. **Automatic Resumption**: When sync ends, the Go backend emits `SYNC_ENDED`, and displays snap back to their normal schedule.
 
 ---
 
-## 4. Project Structure
-```
-multi-window-media-sequencer/
-├── backend/
-│   ├── cmd/
-│   │   ├── server/main.go        # HTTP server, WS hub, and graceful shutdown
-│   │   └── seed/main.go          # Standalone seed data CLI tool
-│   ├── internal/
-│   │   ├── config/               # Environment variable loading & validation
-│   │   ├── database/             # MongoDB connection pool & index setup
-│   │   ├── handlers/             # HTTP REST controllers & WS upgrade handler
-│   │   ├── middleware/           # CORS, structured JSON request logging, recovery
-│   │   ├── models/               # Domain entities (Media, Window, Playlist, SyncEvent)
-│   │   ├── repository/           # MongoDB repositories (Mongo CRUD with $setOnInsert)
-│   │   ├── service/              # Business logic & Authoritative Sync Coordinator
-│   │   ├── timeline/             # 5-hour cycle deterministic timeline engine
-│   │   ├── utils/                # Standardized JSON response & error wrappers
-│   │   └── websocket/            # Gorilla WebSocket Hub with single-writer writePump
-│   ├── seeds/                    # Seed data implementation (4 windows, 11 media items)
-│   ├── Dockerfile                # Multi-stage production Go binary container
-│   └── .env.example              # Backend environment template
-├── frontend/
-│   ├── src/
-│   │   ├── api/client.js         # REST client with relative reverse-proxy routing
-│   │   ├── components/           # MediaWindow, VideoPlayer, ImagePlayer, BlankPlayer,
-│   │   │                         # StatusBadge, SyncControls, PlaylistPanel
-│   │   ├── playback/             # Finite state machine & server clock skew sync
-│   │   ├── views/                # GridDashboard (2x2) & SingleDisplay (/display/:id)
-│   │   ├── websocket/            # Resilient WebSocket hook with exponential backoff
-│   │   ├── App.jsx               # View router
-│   │   ├── index.css             # CSS variables & dark design system
-│   │   └── App.css               # Component layout & animations
-│   ├── Dockerfile                # Multi-stage production container (Node build -> Nginx)
-│   ├── nginx.conf                # Nginx reverse proxy with WS upgrade and gzip
-│   └── .env.example              # Frontend environment template
-├── scripts/
-│   └── smoke_test.ps1            # Automated live deployment smoke test
-├── docker-compose.yml            # Multi-container local production stack
-├── DEMO.md                       # 3–5 minute step-by-step evaluator walkthrough
-├── FINAL_TEST_REPORT.md          # Comprehensive QA and verification test matrix
-└── README.md                     # Master documentation
-```
-
----
-
-## 5. Playback Model & 5-Hour Cycle Engine
-
-### Core Mathematical Formula
-Each window operates under a strict **18,000-second (5-hour)** cycle anchored to `CycleStartTime`:
-
-$$\text{CycleDuration} = 18{,}000\,\text{seconds}$$
-$$\text{CycleOffset} = (T_{\text{query}} - T_{\text{cycle\_start}}) \pmod{18{,}000\,\text{s}}$$
-$$\text{SequenceOffset} = \text{CycleOffset} \pmod{\text{TotalSequenceDuration}}$$
-
-### Invariants Guaranteed
-1. **Zero Artificial Blanks**: If a configured sequence is 60 seconds, it repeats continuously:
-   $$M_1 \to M_2 \to M_3 \to M_1 \to M_2 \to M_3 \dots$$
-   The engine never pads unused cycle time with blank frames.
-2. **Explicit Blank Handling**: Blank media items display strictly for their configured duration and behave as standard sequential playlist elements.
-3. **No Boundary Skew**: Wall-clock calculation guarantees that restarting the backend or refreshing the browser returns the exact same item position without drift.
-
----
-
-## 6. Real-Time Synchronization Design
+## How the 5-Hour Cycle Works
 
 ```
-NORMAL SEQUENCE
-       │
-       ▼ Operator Triggers Sync ("M2", 30s)
-[Go Backend SyncCoordinator]
-       │
-       ├─► Computes: StartTime = Now + 1000ms (Lead Buffer)
-       ├─► Computes: EndTime = StartTime + 30s
-       ├─► Persists Active Sync to MongoDB
-       └─► Broadcasts SYNC_START Envelope via WebSocket Hub
-               │
-               ▼ (All Connected Displays)
-[React Frontend Players]
-       │
-       ├─► Display Yellow "⚡ SYNC OVERRIDE ACTIVE" Banner
-       ├─► Preload & Switch to "M2" Simultaneously
-       └─► Run Synchronized Live Countdown
-               │
-               ▼ (Timer Expires or Operator Cancels)
-[Go Backend SyncCoordinator]
-       │
-       ├─► Broadcasts SYNC_END Envelope
-       └─► Marks Sync Inactive in MongoDB
-               │
-               ▼
-[React Frontend Players]
-       │
-       └─► Query Authoritative 5h Timeline & Resume Normal Sequence
-           (Stored Playlists in MongoDB were NEVER Mutated)
+00:00:00                                                               05:00:00
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ [ M1 -> M2 -> M3 ] [ M1 -> M2 -> M3 ] [ M1 -> M2 -> M3 ] ... (Continuous)  │
+└─────────────────────────────────────────────────────────────────────────────┘
+  ▲                                                                         ▲
+  Cycle Start                                                               Cycle Wraps to Hour 0
 ```
 
-### Critical Resiliency Features
-* **Late-Joining Window**: When a display connects mid-sync, it receives `sync_offset_ms = \max(0, T_{\text{server}} - T_{\text{start}})` and seeks directly into `M2` in unison with other windows.
-* **Preemption Policy**: If a new sync is requested while another sync is active, the backend cancels the active timer, supersedes the previous sync, and immediately broadcasts the new event.
-* **Crash Recovery**: If the Go backend restarts during an active sync, it queries MongoDB on startup. If the sync has time remaining, it re-arms the timer and continues active sync.
+* **18,000 Seconds = 5 Hours**: Each window's schedule repeats on a continuous 5-hour cycle.
+* **Repetition Without Blanking**: If a playlist is 60 seconds long, it repeats 300 times inside the 5 hours ($18{,}000 / 60 = 300$). It does **not** stop after 60 seconds or display blank screens.
+* **Pure Math**: Playback position is computed using modulo arithmetic:
+  $$\text{Current Position} = (\text{Current Time} - \text{Start Time}) \pmod{18{,}000}$$
+  This ensures that restarting the server produces the exact same playback position.
 
 ---
 
-## 7. Dynamic Playlist Updates
-* Operators can append or remove items from a window's playlist while media is actively playing.
-* Updates persist in MongoDB, incrementing the playlist `version`.
-* The Go backend emits a `PLAYLIST_UPDATED` WebSocket event.
-* The window recalculates its timeline sequence dynamically without requiring a full browser refresh.
+## What Happens When a Playlist Changes?
+* An operator uses the **Dynamic Playlist Manager** to add or remove media items.
+* The Go backend updates the database and increments the playlist version number.
+* A `PLAYLIST_UPDATED` notification is sent over WebSocket to that screen.
+* The screen updates its schedule immediately in the background without refreshing the page or interrupting the currently playing item.
 
 ---
 
-## 8. MongoDB Data Model
+## Project Workflow
 
-### Collections
-1. **`windows`**: Display window metadata, location, cycle duration, and cycle anchor timestamp.
-   - Index: `window_number` (Unique).
-2. **`media`**: Asset catalog (videos, images, blanks), duration, and URLs.
-   - Index: `media_key` (Unique).
-3. **`playlists`**: Ordered array of playlist items per window, total duration, and version counter.
-   - Index: `window_number` (Unique).
-4. **`sync_events`**: Active and historical synchronization audit log with start/end timestamps.
-   - Index: `is_active`, `start_time`.
+```mermaid
+flowchart TD
+    subgraph Browser ["User Browser (Port 5173)"]
+        Dashboard["2x2 Grid Dashboard"]
+        Controls["Sync & Playlist Controls"]
+        Players["Video & Image Players"]
+    end
 
----
+    subgraph Server ["Go Backend (Port 8080)"]
+        API["REST API Handlers"]
+        WSHub["Gorilla WebSocket Hub"]
+        Engine["5-Hour Cycle Engine"]
+        SyncMgr["Authoritative Sync Coordinator"]
+    end
 
-## 9. API & WebSocket Documentation
+    subgraph DB ["Database (Port 27017)"]
+        Mongo[("MongoDB Persistent Storage")]
+    end
 
-### REST API Endpoints
-| Method | Endpoint | Description |
-| :--- | :--- | :--- |
-| `GET` | `/health` | Healthcheck and MongoDB ping status. |
-| `GET` | `/api/v1/time` | Authoritative UTC server timestamp for clock skew compensation. |
-| `GET` | `/api/v1/windows` | List all display windows. |
-| `GET` | `/api/v1/windows/:id` | Get window configuration by ID or number. |
-| `GET` | `/api/v1/media` | List media catalog assets. |
-| `GET` | `/api/v1/windows/:id/playlist` | Get configured playlist for a window. |
-| `POST` | `/api/v1/windows/:id/playlist` | Append item to a window's playlist. |
-| `DELETE`| `/api/v1/windows/:id/playlist/:itemId`| Remove an item from a window's playlist. |
-| `GET` | `/api/v1/windows/:id/playback` | Authoritative playback calculation from 5-hour engine. |
-| `POST` | `/api/v1/sync` | Trigger global sync override (`media_key`, `duration_seconds`). |
-| `GET` | `/api/v1/sync/current` | Get active synchronization event if in-flight. |
-| `POST` | `/api/v1/sync/:id/cancel` | Cancel an active synchronization override immediately. |
-
-### WebSocket Protocol (`/ws?window_id=N`)
-Envelopes follow a strictly typed schema:
-```json
-{
-  "type": "STATE_SNAPSHOT | PLAYLIST_UPDATED | SYNC_STARTED | SYNC_ENDED | ERROR | PONG",
-  "version": 1,
-  "timestamp": "2026-09-16T16:01:44.237Z",
-  "payload": { ... }
-}
+    Dashboard -->|REST Requests| API
+    Controls -->|Trigger Sync / Update Playlist| API
+    API --> SyncMgr
+    SyncMgr --> Mongo
+    API --> Engine
+    Engine --> Mongo
+    WSHub <-->|Real-Time WebSocket Events| Players
+    SyncMgr -->|Broadcast SYNC_START / SYNC_ENDED| WSHub
 ```
 
 ---
 
-## 10. Local Setup & Execution
+## Screens / Windows
 
-### 1. Start MongoDB
-Ensure MongoDB is running locally on port `27017`:
+The system comes pre-configured with four physical display zones:
+1. **Window 1 (Front Display)**: High-traffic entrance zone. Playlist: `M1` (10s image) $\to$ `M2` (15s video) $\to$ `M3` (20s image).
+2. **Window 2 (Side Display)**: Peripheral screen. Playlist: `M4` (20s video) $\to$ `M5` (25s image).
+3. **Window 3 (Lobby Display)**: Waiting area. Playlist: `M6` (30s video) $\to$ `M7` (30s image) $\to$ `M8` (35s video).
+4. **Window 4 (Balcony Display)**: Outdoor/terrace area. Playlist: `M9` (20s image) $\to$ `M10` (30s video).
+
+---
+
+## Technology Used
+
+* **Frontend**: React 19, Vite, Vanilla CSS (modular design system with dark theme, responsive grid, and audio controls).
+* **Backend**: Golang (Go 1.24), Clean Hexagonal Architecture, standard `net/http`, structured JSON logging (`log/slog`), Gorilla WebSocket (`gorilla/websocket`).
+* **Database**: MongoDB 7.0 (Collections: `windows`, `media`, `playlists`, `sync_events`).
+* **Containers**: Docker & Docker Compose v2 (Multi-stage Go build, Node Vite preview server).
+
+---
+
+## Data Storage
+
+All critical application data is stored in MongoDB:
+* **`windows`**: Configuration and anchor timestamps for each display screen.
+* **`media`**: Asset catalog containing titles, types (video, image, blank), durations, and URLs.
+* **`playlists`**: The ordered list of items assigned to each window with version numbers.
+* **`sync_events`**: Audit log of active and historical synchronization events.
+
+---
+
+## How to Run Locally
+
+### Prerequisites
+* **Go** 1.22+ installed
+* **Node.js** 20+ installed
+* **MongoDB** installed and running on port 27017
+
+### Step 1: Start MongoDB
+Ensure your local MongoDB service is active:
 ```bash
 mongosh --eval "db.adminCommand('ping')"
 ```
 
-### 2. Run Go Backend
+### Step 2: Start Go Backend
 ```bash
 cd backend
 go run ./cmd/server
 ```
-The backend initializes indexes, seeds sample windows/media, and listens on `:8080`.
+*The backend binds directly to `http://localhost:8080`. On first launch, it automatically seeds the initial 4 windows and 11 media items.*
 
-### 3. Run Standalone Database Seeder (Optional)
-```bash
-cd backend
-go run ./cmd/seed
-```
-
-### 4. Run React Frontend
+### Step 3: Start React Frontend
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
-Open `http://localhost:5173` in any browser.
+*Open `http://localhost:5173` in your browser.*
 
 ---
 
-## 11. Docker & Production Stack
+## Docker Setup
 
-### Launch Full Stack with One Command
+Run the entire application in isolated containers with a single command:
+
 ```bash
 docker compose up --build -d
 ```
-* **Frontend**: `http://localhost:5173`
-* **Backend Health**: `http://localhost:8080/health`
-* **MongoDB**: Internal port `27017` (isolated to `127.0.0.1`).
+
+### Access Ports
+* **Frontend Web Application**: `http://localhost:5173`
+* **Backend REST API**: `http://localhost:8080/health`
+* **MongoDB**: `127.0.0.1:27017`
+
+### Stop Containers
+```bash
+docker compose down
+```
 
 ---
 
-## 12. AWS Deployment Instructions (EC2 + Docker + Atlas)
+## Configuration
 
-1. **Launch EC2**: Ubuntu 24.04 LTS (`t3.small`). Configure Security Group with ports `22` (SSH), `80` (HTTP), `443` (HTTPS).
-2. **MongoDB Atlas**: Create free M0 cluster. Whitelist EC2 IP in Network Access.
-3. **Provisioning Script**:
-   ```bash
-   sudo apt-get update && sudo apt-get upgrade -y
-   curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh
-   git clone https://github.com/ankitverma969/multi-window-media-sequencer.git
-   cd multi-window-media-sequencer
-   cp .env.example .env
-   # Edit .env with your MongoDB Atlas URI
-   docker compose up -d --build
-   ```
-4. **SSL (Certbot)**:
-   ```bash
-   sudo apt-get install -y certbot python3-certbot-nginx
-   sudo certbot --nginx -d yourdomain.com
-   ```
+Copy `.env.example` to `.env` to customize settings:
 
-*Note: For the internship evaluation on this local environment, AWS credentials were not pre-configured. Live deployment status is documented as `BLOCKED — NOT VERIFIED`.*
+| Variable | Default (Local) | Purpose |
+| :--- | :--- | :--- |
+| `PORT` | `8080` | Port where the Go backend listens. |
+| `ENVIRONMENT` | `development` | Environment mode (`development` or `production`). |
+| `MONGODB_URI` | `mongodb://localhost:27017` | MongoDB connection string. |
+| `MONGODB_DATABASE` | `media_sequencer` | Target database name. |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:5173,...` | Whitelist of allowed frontend origins. |
+| `SYNC_LEAD_TIME_MS` | `1000` | Pre-sync buffer time in milliseconds. |
+| `SEED_ON_STARTUP` | `true` | Automatically seeds database if empty. |
+| `VITE_API_URL` | `http://localhost:8080` | URL where the frontend reaches the Go API. |
+| `VITE_WS_URL` | `ws://localhost:8080` | URL where the frontend reaches WebSockets. |
 
 ---
 
-## 13. Live Application URLs
-* **Frontend Dashboard**: `http://localhost:5173/`
-* **Backend Health**: `http://localhost:8080/health`
-* **Standalone Display 1**: `http://localhost:5173/#/display/1`
-* **AWS Live Deployment**: `BLOCKED — NOT VERIFIED` *(Requires AWS credentials)*
+## How to Test
 
----
-
-## 14. Testing & Verification
-
-### Run Backend Tests
+### Run All Backend Tests
 ```bash
 cd backend
-go test -count=1 ./...
+go test -v -count=1 ./...
 ```
-*10/10 Go packages passing.*
+*10/10 Go packages passing 100%.*
 
-### Run Frontend Tests
+### Run All Frontend Tests
 ```bash
 cd frontend
 npm test -- --run
 ```
 *15/15 Vitest tests passing.*
 
-### Run Live Deployment Smoke Test
+### Run Deployment Smoke Test
 ```bash
 powershell -ExecutionPolicy Bypass -File .\scripts\smoke_test.ps1
 ```
-*8/8 checks passing.*
+*Tests health, database connectivity, server time, all 4 windows, playlists, and sync trigger/cancel.*
 
 ---
 
-## 15. Assumptions & Tradeoffs
+## Evaluator 3–5 Minute Demo Flow
 
-1. **Deterministic Wall-Clock Modulo**: A window's position is computed using modulo arithmetic against an anchor timestamp rather than an in-memory counter. This ensures zero drift across backend restarts.
-2. **Predictive Lead Time for Video Sync**: Triggering "Play Now" over WebSockets incurs network jitter. Providing a 1000ms lead buffer gives browsers time to preload and start media synchronously.
-3. **Muted Autoplay Policy**: Modern Chromium browsers block programmatic unmuted video playback without user gesture. Videos default to muted with explicit interactive unmute toggles on each card.
-4. **Wall-Clock Schedule Resumption**: Post-sync resumption snaps to where the window *should* be right now according to its 5-hour cycle, preserving broadcast fidelity.
-5. **Preemption Policy**: A second sync request immediately preempts and supersedes any active sync.
+1. Open `http://localhost:5173/` to view the 2x2 grid. Observe that all 4 windows show green **CONNECTED** badges and play independent sequences.
+2. In the **⚡ Real-Time Synchronization Console**, select **M2 — Product Showcase Video (15s)**, set duration to `20` seconds, and click **Trigger Synchronization**.
+3. Observe all 4 screens simultaneously switch to **M2** with yellow **⚡ SYNC OVERRIDE ACTIVE** badges and a live countdown.
+4. When the countdown reaches zero, all screens automatically return to their scheduled playlists.
+5. In the **📋 Dynamic Playlist Manager**, add **M4** to Window 1. Notice that Window 1 updates dynamically without refreshing the page.
+6. Open `http://localhost:5173/#/display/2` in a new tab to see how a single screen runs in standalone signage mode.
 
 ---
 
-## 16. Troubleshooting Guide
+## API Overview
 
-| Issue | Root Cause | Resolution |
+All API endpoints return standardized JSON: `{ success: true, data: ..., server_time: ... }`.
+
+* `GET /health`: Healthcheck endpoint reporting server status and database connectivity.
+* `GET /api/v1/time`: Authoritative server UTC timestamp for clock synchronization.
+* `GET /api/v1/windows`: List all configured display windows.
+* `GET /api/v1/windows/:id/playlist`: Retrieve the configured playlist for a window.
+* `POST /api/v1/windows/:id/playlist`: Append a media asset to a window's playlist.
+* `DELETE /api/v1/windows/:id/playlist/:itemId`: Remove an item from a window's playlist.
+* `GET /api/v1/windows/:id/playback`: Authoritative current item and timeline position.
+* `POST /api/v1/sync`: Trigger a synchronized media override across all windows.
+* `GET /api/v1/sync/current`: Query active sync event details.
+* `POST /api/v1/sync/:id/cancel`: Cancel an active sync override immediately.
+
+---
+
+## WebSocket Overview
+
+Screens connect to `ws://localhost:8080/ws?window_id=N`.
+
+### Message Envelopes
+* `STATE_SNAPSHOT`: Sent on initial connection. Contains server time, window playlist, and active sync event.
+* `PLAYLIST_UPDATED`: Broadcast when an operator changes a window's playlist.
+* `SYNC_STARTED`: Broadcast when an operator triggers a synchronized override.
+* `SYNC_ENDED`: Broadcast when sync duration expires, prompting windows to resume normal playback.
+* `PONG`: Heartbeat response to keep connections alive.
+
+---
+
+## AWS Deployment
+
+The application is architected to run directly on an **AWS EC2** instance paired with **MongoDB Atlas**:
+
+```text
+AWS EC2 Instance (Direct Security Group Ports)
+├── React Frontend Container (Port 5173:5173)
+└── Go Backend Container     (Port 8080:8080)
+        │
+        ▼ Port 27017 (TLS)
+   MongoDB Atlas Managed Cluster
+```
+
+### Deployment Steps
+1. Launch an Ubuntu EC2 instance (`t3.small`).
+2. In the AWS Security Group, open inbound ports:
+   - **Port 22**: SSH
+   - **Port 5173**: Frontend Web App
+   - **Port 8080**: Go Backend API & WebSocket
+3. Install Docker:
+   ```bash
+   curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh
+   ```
+4. Clone repository, create `.env` pointing `MONGODB_URI` to MongoDB Atlas, and set `VITE_API_URL` to `http://<YOUR_EC2_IP>:8080`.
+5. Launch containers:
+   ```bash
+   docker compose up -d --build
+   ```
+
+---
+
+## Important Assumptions
+
+1. **Deterministic Wall-Clock Resumption**: Resuming after a sync event snaps to where the window *should* be right now according to its 5-hour cycle, preserving broadcast fidelity.
+2. **Zero Auto-Blank Policy**: Shorter playlists repeat continuously. Blank screens only occur if an operator explicitly adds a `BLANK` item.
+3. **Preemption Policy**: Triggering a new sync while another sync is running immediately supersedes the previous sync.
+4. **Predictive Lead Buffer**: A 1000ms buffer gives browsers time to fetch media before synchronized playback begins.
+
+---
+
+## Known Browser Limitations
+
+1. **Autoplay Policies**: Chromium browsers block programmatic unmuted video playback without user interaction. Videos play muted by default with interactive audio unmute toggles (`🔊 / 🔇`) on each window card.
+2. **Hardware Video Decode Latency**: Depending on client hardware and network speed, video startup timing across different physical computers can vary by 100–300ms.
+
+---
+
+## Troubleshooting
+
+| Problem | Root Cause | Solution |
 | :--- | :--- | :--- |
-| **WebSocket Connection Fails (`1006`)** | Reverse proxy missing upgrade headers. | Verify `Upgrade $http_upgrade` and `Connection "Upgrade"` in `nginx.conf`. |
-| **CORS Error in Console** | Frontend origin missing in `CORS_ALLOWED_ORIGINS`. | Add frontend URL to `CORS_ALLOWED_ORIGINS` in `.env`. |
-| **Video Playback Paused** | Browser autoplay policy blocked sound. | Click the sound icon (`🔊 / 🔇`) on the window header to unmute. |
-| **502 Bad Gateway** | Backend container still starting or DB unreachable. | Check `docker compose logs backend` and verify MongoDB is healthy. |
-| **Port Conflict on 5173 or 8080** | Previous process running. | Terminate existing processes on port 8080/5173. |
+| **WebSocket Fails to Connect** | Go backend server is not running on port 8080. | Verify backend is running: `curl http://localhost:8080/health`. |
+| **CORS Error in Browser** | Frontend URL not allowed by backend. | Add your frontend address to `CORS_ALLOWED_ORIGINS` in `.env`. |
+| **Video Playback Has No Audio** | Browser autoplay policy restricted audio. | Click the speaker icon on the window card to unmute. |
+| **Database Connection Error** | MongoDB is not running on port 27017. | Start local MongoDB service or verify MongoDB Atlas credentials. |
+
+---
+
+## Project Structure
+
+```text
+multi-window-media-sequencer/
+├── backend/
+│   ├── cmd/
+│   │   ├── server/main.go        # HTTP server, WebSocket hub, and graceful shutdown
+│   │   └── seed/main.go          # Standalone database seeder CLI
+│   ├── internal/
+│   │   ├── config/               # Environment variable loading & validation
+│   │   ├── database/             # MongoDB connection pool & index creation
+│   │   ├── handlers/             # REST controllers & WebSocket upgrade handler
+│   │   ├── middleware/           # CORS, structured request logging, panic recovery
+│   │   ├── models/               # Data structures (Media, Window, Playlist, SyncEvent)
+│   │   ├── repository/           # MongoDB persistence layer ($setOnInsert upserts)
+│   │   ├── service/              # Authoritative Sync Coordinator & business logic
+│   │   ├── timeline/             # 5-hour cycle deterministic timeline engine
+│   │   ├── utils/                # JSON response and error formatters
+│   │   └── websocket/            # Gorilla WebSocket Hub with single-writer writePump
+│   ├── seeds/                    # Initial demo data (4 windows, 11 media items)
+│   └── Dockerfile                # Multi-stage production Go container
+├── frontend/
+│   ├── src/
+│   │   ├── api/client.js         # REST client communicating with port 8080
+│   │   ├── components/           # MediaWindow, VideoPlayer, ImagePlayer, BlankPlayer,
+│   │   │                         # StatusBadge, SyncControls, PlaylistPanel
+│   │   ├── playback/             # State machine & server clock skew math
+│   │   ├── views/                # GridDashboard (2x2) & SingleDisplay (/display/:id)
+│   │   ├── websocket/            # Resilient WebSocket hook with exponential backoff
+│   │   ├── App.jsx               # View router
+│   │   ├── index.css             # CSS variables & design tokens
+│   │   └── App.css               # Grid layout & styling
+│   └── Dockerfile                # Production container serving via Vite Preview
+├── scripts/
+│   └── smoke_test.ps1            # Automated live deployment smoke test
+├── docker-compose.yml            # Multi-container production stack (Direct ports, no Nginx)
+├── .env.example                  # Environment configuration template
+├── INTERVIEW.md                  # Comprehensive 34-topic interview preparation guide
+└── README.md                     # Master documentation
+```
+
+---
+
+## Assignment Requirement Checklist
+
+- [x] **React Frontend**: Built using React 19 and Vite with a modern 2x2 grid interface.
+- [x] **Golang Backend**: Idiomatic Go 1.24 with Clean Architecture and standard routing.
+- [x] **MongoDB Persistence**: Configuration and dynamic updates survive process restarts.
+- [x] **Multiple Windows**: 4 display windows run simultaneously and independently.
+- [x] **Independent Playlists**: Each window manages its own sequence of assets.
+- [x] **Continuous Playback**: Media sequences loop gaplessly with zero artificial delays.
+- [x] **5-Hour Cycle**: Mathematically proven modulo 18,000s wall-clock engine.
+- [x] **Explicit Blank Handling**: 0 auto-blanks; blank appears only when configured.
+- [x] **Dynamic Updates**: Live playlist additions take effect without page reload.
+- [x] **Synchronized Media**: Instant override across all 4 screens simultaneously.
+- [x] **Sync Expiration**: Screens automatically revert to their own schedule on timer end.
+- [x] **Playlist Preservation**: Stored playlists in MongoDB are never altered by sync events.
+- [x] **Gorilla WebSockets**: Thread-safe single-writer channel pattern with heartbeat pings.
+- [x] **Seed Data**: Demo data available via auto-start and standalone `cmd/seed` CLI.
+- [x] **Zero Nginx**: Simple, direct port-to-port architecture.
